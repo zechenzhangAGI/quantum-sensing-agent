@@ -1,3 +1,4 @@
 .vscode
 b26_toolkit_for_agent/
 data/
+.env
