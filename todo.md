@@ -28,3 +28,4 @@ projects/
 
 ## set sail?!
 Refer to "This will lend itself..." for next big step.
+ReAct prompting? -- could be good to daisy-chain together data, especially with the structured database, chaining experiments, etc.
