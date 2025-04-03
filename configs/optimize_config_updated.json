@@ -1,0 +1,58 @@
+{
+  "scripts": {
+    "optimize": {
+      "class": "optimize",
+      "filepath": "C:\\Users\\NVAFM_6th_fl_2\\NV-Automation\\b26_toolkit_for_agent\\b26_toolkit-master\\b26_toolkit\\scripts\\optimize.py",
+      "info": "Optimize x, y and z by scanning and smoothing data.",
+      "instruments": {
+        "PB": {
+          "class": "LISE607RTPulseBlaster",
+          "settings": {}
+        },
+        "daq": {
+          "class": "NI6353",
+          "settings": {}
+        }
+      },
+      "settings": {
+        "optimizing_x": false,
+        "optimizing_y": false,
+        "optimizing_z": true,
+        "sweep_range": {
+          "x": 0.3,
+          "y": 0.3,
+          "z": 0.6
+        },
+        "num_points": {
+          "x": 125,
+          "y": 125,
+          "z": 41
+        },
+        "smoothing_window_size": {
+          "x": 21,
+          "y": 21,
+          "z": 5
+        },
+        "smoothing_polynomial_order": {
+          "x": 3,
+          "y": 3,
+          "z": 3
+        },
+        "time_per_pt": {
+          "galvo": 0.015,
+          "z-piezo": 0.1
+        },
+        "settle_time": {
+          "galvo": 0.0005,
+          "z-piezo": 0.25
+        },
+        "DAQ_channels": {
+          "x_ao_channel": "ao0",
+          "y_ao_channel": "ao1",
+          "z_ao_channel": "ao2",
+          "counter_channel": "ctr0"
+        }
+      }
+    }
+  }
+}

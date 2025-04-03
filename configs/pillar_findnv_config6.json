@@ -1,0 +1,22 @@
+{
+  "scripts": {
+    "find_nv": {
+      "class": "FindNV",
+      "filepath": "C:\\Users\\NVAFM_6th_fl_2\\NV-Automation\\b26_toolkit_for_agent\\b26_toolkit-master\\b26_toolkit\\scripts\\find_nv.py",
+      "info": "Script to locate NV centers by scanning a voltage range and analyzing brightness.",
+      "settings": {
+        "initial_point": {
+          "x": -2.65,
+          "y": 3
+        },
+        "sweep_range": 1.0,
+        "num_points": 81,
+        "nv_size": 21,
+        "min_mass": 60,
+        "number_of_attempts": 1,
+        "center_on_current_location": false
+      },
+      "instruments": {}
+    }
+  }
+}
