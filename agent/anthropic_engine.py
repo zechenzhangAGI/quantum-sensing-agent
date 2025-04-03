@@ -5,7 +5,7 @@ import base64
 from mimetypes import guess_type
 
 # Replace with your actual Anthropic API key
-ANTHROPIC_API_KEY = "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"
+# ANTHROPIC_API_KEY = "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"
 
 # Choose a default model, e.g. "claude-2" or "claude-2.0"
 DEFAULT_MODEL = "claude-3-5-sonnet-20241022"
