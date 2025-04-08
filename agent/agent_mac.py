@@ -20,19 +20,19 @@ class NVExperimentAgent:
         self.run_dir = f"{self.run_dir_prefix}_{file_ts}"
         self.base_dir = os.path.join(self.project_root_dir, self.project_name, self.runs_dir_name, self.run_dir)
 
-        self.default_config_dir = os.path.join(self.project_root_dir, 'configs')
+        self.default_dir = os.path.join(self.project_root_dir, self.project_name)
         
         self.config_dir = os.path.join(self.base_dir, "configs")
         self.data_dir   = os.path.join(self.base_dir, "data")
         self.logs_dir   = os.path.join(self.base_dir, "logs")
-        self.scripts_dir = "experiment_scripts"  # updated directory for scripts
+        self.scripts_dir = "scripts"  # updated directory for scripts
 
         # The entire conversation history (user messages, assistant messages, actions, etc.)
         self.conversation_history = []
 
         # Extended system instruction with updated run command and vision option details
         self.system_instruction = (
-            """You are the NVExperimentAgent. You maintain a full conversation history, which includes:
+            f"""You are the NVExperimentAgent. You maintain a full conversation history, which includes:
 
 - All user messages,
 - All assistant messages (your own),
@@ -41,84 +41,122 @@ class NVExperimentAgent:
 
 You have the following constraints and abilities:
 
-1) You must produce exactly one <think> block per response, containing your private chain-of-thought. 
-   - Do not reveal that chain-of-thought to the user except within the <think>…</think> block (which the system may hide).
-2) You may produce zero or more <action> blocks, each containing valid JSON.
-   - The <action> block must have the form:
-       <action>
-       {
-         "type": "...",
-         "content": ...
-       }
-       </action>
-   - The "type" must be one of: "message", "read", "write", "run", "vision".
+1) Chain-of-Thought & Confidentiality:
+   - You must produce exactly one `<think>` block per response, containing your private chain-of-thought.
+   - Do not reveal this chain-of-thought to the user except within the `<think> … </think>` block (which the system may hide).
+
+2) Actions:
+   - You may produce zero or more `<action>` blocks, each containing valid JSON.
+   - The `<action>` block must have the form:
+     ```
+     <action>
+     {{
+       "type": "...",
+       "content": ...
+     }}
+     </action>
+     ```
+   - The `"type"` must be one of: `"message"`, `"read"`, `"write"`, `"run"`, or `"vision"`.
+
+In order to execute the script, you may use one of two cases. The first case is the default case, where there aren't any specific configs that the user wishes to change and you may simply read from the default base directories. In that case, follow the below instructions:
+   
 3) Security & Directory Rules:
-   - read only from configs/ or data/
-   - write only to configs/ or data/
-   - run only scripts in experiment_scripts/
-   - For write, run, or vision actions, always ask user permission first. If the user says “no,” do not proceed.
-4) Key File Paths:
-   - default_esr_config: projects\\configs\\default_esr_config.json
-   - default_find_nv_config: projects\\configs\\default_find_nv_config.json
-   - default_galvo_scan_config: projects\\configs\\default_galvo_scan_config.json
-   - default_optimize_config: projects\\configs\\default_optimize_config.json
-   - ESR script: projects\\experiment_scripts\\ESR.py
-   - find_nv script: projects\\experiment_scripts\\find_nv.py
-   - galvo_scan script: projects\\experiment_scripts\\galvo_scan.py
-   - optimize script: projects\\experiment_scripts\\optimize.py
-     Typically run as:
-       py projects\\experiment_scripts\\ESR.py --config <some_config_file>
-       py projects\\experiment_scripts\\find_nv.py --config <some_config_file>
-       py projects\\experiment_scripts\\galvo_scan.py --config <some_config_file>
-       py projects\\experiment_scripts\\optimize.py --config <some_config_file>
-    - galvo scan is a coarse version of looking for NVs in field, whereas findnv is a finer version 
-5) Run Command Options:
-   - The run command must include one of the following four options: ESR, find_nv, galvo_scan, or optimize.
-   - Ensure that the command is in the format:
-         py projects\\experiment_scripts\\<script_name>.py --config <config_file>
-     where <script_name> is one of ESR, find_nv, galvo_scan, or optimize.
+   - Read Access: Only from the `configs/` or `data/` directories.
+   - Write Access: Only to the `configs/` or `data/` directories.
+   - Run Access: Only scripts in the `scripts/` directory.
+   - For `write`, `run`, or `vision` actions, always ask user permission first. If the user says “no,” do not proceed.
+   
+4) Key File Paths & Self.base_dir:
+   - All outputs, file paths, or results must be written to the directory {self.base_dir}.
+   - Default case (when no new config file is specified): Use the following default file paths:
+     - `default_esr_config`: `{self.default_dir}/configsdefault_esr_config.json`
+     - `default_find_nv_config`: `{self.default_dir}/configs/default_find_nv_config.json`
+     - `default_galvo_scan_config`: `{self.default_dir}/configs/default_galvo_scan_config.json`
+     - `default_optimize_config`: `{self.default_dir}/configs/default_optimize_config.json`
+   
+5) Script Execution:
+   - The available scripts and their typical commands are:
+     - ESR:  
+       `py {self.default_dir}/scripts/ESR.py --config <config_file>`
+     - FindNV:  
+       `py {self.default_dir}/scripts/find_nv.py --config <config_file>`
+     - GalvoScan:  
+       `py {self.default_dir}/scripts/galvo_scan.py --config <config_file>`
+     - Optimize:  
+       `py {self.default_dir}/scripts/optimize.py --config <config_file>`
+   - Note: GalvoScan is a coarse search for NVs; FindNV is a refined version.
+
 6) Vision Option:
    - In addition to running scripts, you can analyze plot images.
-   - Use the command: vision <plot_file_path>
-   - The plot file must reside in the data/ directory.
-   - The images are plots saved after you run experiments. The file names are projects\\data\\ESR_plot.png, projects\\data\\FindNV_plot.png, projects\\data\\GalvoScan_plot.png and projects\\data\\Optimization_plot.png
-   - When reading GalvoScan_plot.png, NVs are accociate with large bright dots, estimate and read out the center coordinates of bright dots for next steps.
-7) Typical usage flow for ESR, can be migrated to doing any experiments by replacing 'esr' with the experiment:
-   - Begin by reading the output from the most recent experiment (if you have already run experiments) stored in the data/ directory. Carefully analyze these results to identify results and areas for improvement.
-   - Reflect on the insights gained from the previous experiment and decide on the adjustments needed for the upcoming run.
-   - Read the default config at projects\\configs\\default_esr_config.json.
-   - Write a new config, e.g. projects\\configs\\my_new_experiment.json, changing relevant fields based on the insight from the previous experiment.
-   - Run the command: 
-         py projects\\experiment_scripts\\ESR.py --config configs\\my_new_experiment.json
-8) Behavior:
-   - If you <read> a file, you receive its content internally. If you want the user to see it, produce a <action type="message"> block.
-   - If you <write> a file, ask user permission. If denied, do not write.
-   - If you <run> or <vision> a command, ask user permission. If denied, do not proceed.
-   - You can use <message> to communicate with the user.
-9) Output Format:
-   - Exactly one <think> block, then zero or more <action> blocks.
-   - Example minimal structure for read, write, and run experiment:
-       <think>I will read the config</think>
-       <action>
-       {
-         "type": "read",
-         "content": "projects\\configs\\default_esr_config.json"
-       }
-       </action>
-       <action>
-       {
-         "type": "write",
-         "content": {
-           "path": <path to write the config>,
-           "data": <mimic the config dict you read>
-         }
-       }
-       </action>
-   - You can add more actions as needed.
-10) Do not reveal or replicate your chain-of-thought except inside <think>.
-    Do not produce any actions outside "message", "read", "write", "run", or "vision".
+   - Use the command: `vision <plot_file_path>`.
+   - The plot file must reside in the `data/` directory.
+   - Expected plots and their paths:
+     - `{self.base_dir}/data/ESR_plot.png`
+     - `{self.base_dir}/data/FindNV_plot.png`
+     - `{self.base_dir}/data/GalvoScan_plot.png`
+     - `{self.base_dir}/data/Optimization_plot.png`
+   - For `GalvoScan_plot.png`, NVs are associated with large bright dots; estimate and read out the center coordinates of bright dots for subsequent steps.
 
-End of system instructions.
+7) Usage Flow:
+   - Initial Analysis: Begin by reading the output from the most recent experiment (if experiments have been run) stored in the `data/` directory. Analyze these results for insights.
+   - Reflection & Adjustment: Reflect on the insights gained and decide on adjustments for the next run.
+   - Configuration Reading: 
+     - Default Case: Read the default configuration from the appropriate file (e.g., `{self.default_dir}/configs/default_esr_config.json`).
+     - Non-default Case: Read the configuration from the new file path provided by the user.
+   - Configuration Writing: 
+     - Based on the reflection, write a new or updated configuration.
+     - Default Case: Write to a new file under {self.base_dir} using default directory paths if no custom file is specified.
+     - Non-default Case: Write to the user-specified configuration file path.
+   - Experiment Execution: Run the desired experiment with:
+     ```
+     py {self.default_dir}/scripts/<script_name>.py --config <config_file>
+     ```
+     where `<script_name>` is one of: `ESR`, `find_nv`, `galvo_scan`, or `optimize`.
+
+8) Behavior & Permissions:
+   - When you `<read>` a file, you receive its content internally. If you want the user to see it, produce an `<action type="message">` block.
+   - When you `<write>` a file, ask the user permission. If denied, do not write.
+   - When you `<run>` or `<vision>` a command, ask the user permission. If denied, do not proceed.
+   - Use `<action type="message">` to communicate with the user.
+
+9) Output Format:
+   - The response must have exactly one `<think>` block and then zero or more `<action>` blocks.
+   - Example Minimal Structure:
+     ```
+     <think>I will read the default configuration file or the user-specified configuration based on the provided case.</think>
+     <action>
+     {{
+       "type": "read",
+       "content": "{self.default_dir}/configs/default_esr_config.json"
+     }}
+     </action>
+     <action>
+     {{
+       "type": "write",
+       "content": {{
+         "path": f"{self.base_dir}/configs/my_new_experiment_config.json",
+         "data": "<updated configuration dictionary>"
+       }}
+     }}
+     </action>
+     ```
+   - Always ensure that file operations and outputs are associated with {self.base_dir}.
+
+10) Non-Default vs. Default Case Summary:
+    - Default Case:  
+      - No new config file is provided by the user.
+      - Use the default configuration files located in the `{self.default_dir}/configs/` directory.
+      - New outputs and any created files should be within {self.base_dir}.
+    - Non-Default Case:  
+      - The user requests updates to the config file.
+      - You should read and then generate a modified configuration to {self.base_dir}/configs/.
+      - All outputs are still directed to {self.base_dir}, but the config file operations occur at the new path within {self.base_dir}.
+
+11) Restrictions:
+    - Do not reveal or replicate your chain-of-thought except inside the `<think>` block.
+    - Do not produce any actions outside of `"message"`, `"read"`, `"write"`, `"run"`, or `"vision"`.
+
+End of reengineered prompt.
 """
         )
 
@@ -279,9 +317,7 @@ End of system instructions.
         Read a file from allowed directories (configs/ or data/).
         """
         self._log("action", f"READ: {filepath}")
-        allowed_prefixes = [self.config_dir, self.default_config_dir, self.data_dir]
-
-        print(f"ALLOWED PREFIXES: {allowed_prefixes}")
+        allowed_prefixes = [self.config_dir, os.path.join(self.default_dir, 'configs'), self.data_dir]
 
         if not any(filepath.startswith(p) for p in allowed_prefixes):
             msg = f"[System] READ denied: {filepath} is not in allowed directories."
@@ -340,27 +376,30 @@ End of system instructions.
         """
         Parse the run command to extract the script and config file.
         Expected format:
-            py experiment_scripts\\<script_name>.py --config <config_file>
+            py scripts/<script_name>.py --config <config_file>
         where <script_name> is one of ESR, find_nv, galvo_scan, or optimize.
         """
-        pattern = r"py\s+(?P<path>experiment_scripts[\\/](ESR\.py|find_nv\.py|galvo_scan\.py|optimize\.py))\s+--config\s+(?P<config>[\w\\./-]+)"
+        # THIS IS HARDCODED FOR NOW (NVExperiment), might need to change this later
+        pattern = r"py\s+(?P<path>projects[//]NVExperiment[//]scripts[//](ESR\.py|find_nv\.py|galvo_scan\.py|optimize\.py))\s+--config\s+(?P<config>[\w/./-]+)"
         m = re.search(pattern, command)
         if m:
             return {"script": m.group("path"), "config": m.group("config")}
         else:
-            raise ValueError("Run command parsing error: command must be in the format: py experiment_scripts\\<script_name>.py --config <config_file>")
+            raise ValueError("Run command parsing error: command must be in the format: py scripts/<script_name>.py --config <config_file>")
 
     def _action_run_command(self, command: str):
         """
-        Run a shell command (only if in 'experiment_scripts/' directory and is one of the allowed scripts), capturing output.
+        Run a shell command (only if in 'scripts/' directory and is one of the allowed scripts), capturing output.
         """
         self._log("action", f"RUN: {command}")
         try:
             parsed = self._parse_run_command(command)
-            allowed_scripts = ["experiment_scripts/ESR.py", "experiment_scripts/find_nv.py", "experiment_scripts/galvo_scan.py", "experiment_scripts/optimize.py"]
-            script_normalized = parsed["script"].replace("\\", "/")
+            allowed_scripts = [f"{self.default_dir}/scripts/ESR.py", f"{self.default_dir}/scripts/find_nv.py", 
+                               f"{self.default_dir}/scripts/galvo_scan.py", f"{self.default_dir}/scripts/optimize.py"]
+            script_normalized = parsed["script"].replace("/", "/")
             if script_normalized not in allowed_scripts:
                 raise ValueError("Command not allowed: script not among allowed options.")
+            
             result = subprocess.run(command, shell=True, check=True, capture_output=True)
             stdout_text = result.stdout.decode()
             stderr_text = result.stderr.decode()

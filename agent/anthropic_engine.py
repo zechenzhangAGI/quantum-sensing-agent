@@ -3,9 +3,13 @@
 import anthropic
 import base64
 from mimetypes import guess_type
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Replace with your actual Anthropic API key
-# ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 
 # Choose a default model, e.g. "claude-2" or "claude-2.0"
 DEFAULT_MODEL = "claude-3-5-sonnet-20241022"

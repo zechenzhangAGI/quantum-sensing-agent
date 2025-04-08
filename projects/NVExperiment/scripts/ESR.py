@@ -36,10 +36,6 @@ def main():
         print(f"[Runner] ESR script not found at: {script_path}")
         sys.exit(1)
 
-   
-
-    
-
     # 4. Instantiate the ESR_RnS class
     esr = ESR_RnS(config_file=config_file)
     print("[Runner] Created ESR_RnS instance.")
