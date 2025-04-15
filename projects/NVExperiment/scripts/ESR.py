@@ -3,22 +3,24 @@ import json
 import os
 import importlib.util
 import matplotlib.pyplot as plt
+import argparse
 from datetime import datetime
-sys.path.append(r'C:\\Users\\NVAFM_6th_fl_2\\NV-Automation\\b26_toolkit_for_agent\\b26_toolkit-master')
+sys.path.append(r'C:\Users\NVAFM_6th_fl_2\NV-Automation\b26_toolkit_for_agent\b26_toolkit-master')
 from pylabcontrol.core import Script
 from b26_toolkit.scripts.esr_RnS import ESR_RnS
 def main():
     """
     Usage:
-      py ESR.py --config configs/esr_experiment_YYYY-MM-DD.json 
+      py ESR.py --config configs/esr_experiment_YYYY-MM-DD.json [--output-dir path/to/output/directory]
     """
     # 1. Parse command-line args
-    if len(sys.argv) < 3:
-        print("Usage: py ESR.py --config <path/to/config.json>")
-        sys.exit(1)
-
-    # e.g. ["experiment_runner.py", "--config", "configs/esr_experiment.json"]
-    config_file = sys.argv[2]
+    parser = argparse.ArgumentParser(description='Run ESR experiment')
+    parser.add_argument('--config', required=True, help='Path to the config JSON file')
+    parser.add_argument('--output-dir', default='data', help='Directory to save output data and plots')
+    args = parser.parse_args()
+    
+    config_file = args.config
+    data_dir = args.output_dir
     if not os.path.exists(config_file):
         print(f"[Runner] Config file not found: {config_file}")
         sys.exit(1)
@@ -52,9 +54,8 @@ def main():
     # The ESR code's `_plot()` checks for `axes_list[0]`—so passing [ax] is enough.
     esr._plot([ax], data=esr.data)  # Plot the final ESR data
 
-    # 7. Save the figure to your data/ folder with a timestamp
+    # 7. Save the figure to the specified output directory with a timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    data_dir = "data"  # Adjust if your layout differs
     os.makedirs(data_dir, exist_ok=True)
     outpath = os.path.join(data_dir, f"ESR_plot.png")
     fig.savefig(outpath, dpi=150)

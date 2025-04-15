@@ -340,15 +340,18 @@ End of system instructions.
         """
         Parse the run command to extract the script and config file.
         Expected format:
-            py experiment_scripts\\<script_name>.py --config <config_file>
+            py experiment_scripts\<script_name>.py --config <config_file> [--output-dir <output_directory>]
         where <script_name> is one of ESR, find_nv, galvo_scan, or optimize.
         """
-        pattern = r"py\s+(?P<path>experiment_scripts[\\/](ESR\.py|find_nv\.py|galvo_scan\.py|optimize\.py))\s+--config\s+(?P<config>[\w\\./-]+)"
+        pattern = r"py\s+(?P<path>experiment_scripts[\\/](ESR\.py|find_nv\.py|galvo_scan\.py|optimize\.py))\s+--config\s+(?P<config>[\w\\./-]+)(?:\s+--output-dir\s+(?P<output_dir>[\w\\./-]+))?"
         m = re.search(pattern, command)
         if m:
-            return {"script": m.group("path"), "config": m.group("config")}
+            result = {"script": m.group("path"), "config": m.group("config")}
+            if m.group("output_dir"):
+                result["output_dir"] = m.group("output_dir")
+            return result
         else:
-            raise ValueError("Run command parsing error: command must be in the format: py experiment_scripts\\<script_name>.py --config <config_file>")
+            raise ValueError("Run command parsing error: command must be in the format: py experiment_scripts\\<script_name>.py --config <config_file> [--output-dir <output_directory>]")
 
     def _action_run_command(self, command: str):
         """
@@ -361,6 +364,13 @@ End of system instructions.
             script_normalized = parsed["script"].replace("\\", "/")
             if script_normalized not in allowed_scripts:
                 raise ValueError("Command not allowed: script not among allowed options.")
+            
+            # Add output directory parameter if not already specified
+            if "output_dir" not in parsed:
+                # Append the data directory to the command
+                command = f"{command} --output-dir {self.data_dir}"
+                self._log("action", f"Modified command with output directory: {command}")
+            
             result = subprocess.run(command, shell=True, check=True, capture_output=True)
             stdout_text = result.stdout.decode()
             stderr_text = result.stderr.decode()
