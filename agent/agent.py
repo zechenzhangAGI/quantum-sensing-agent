@@ -74,22 +74,26 @@ You have the following constraints and abilities:
     - galvo scan is a coarse version of looking for NVs in field, whereas findnv is a finer version 
 5) Run Command Options:
    - The run command must include one of the following four options: ESR, find_nv, galvo_scan, or optimize.
-   - Ensure that the command is in the format:
-         py projects\\experiment_scripts\\<script_name>.py --config <config_file>
+   - IMPORTANT: You MUST include the --output-dir parameter in your command to specify where results should be saved.
+   - Always use the current run's data directory as the output directory: projects/NVExperiment/runs/run_(insert TIMESTAMP here)/data/
+   - The complete command format should be:
+         py projects/experiment_scripts/<script_name>.py --config <config_file> --output-dir projects/NVExperiment/runs/run_(insert TIMESTAMP here)/data/
      where <script_name> is one of ESR, find_nv, galvo_scan, or optimize.
 6) Vision Option:
    - In addition to running scripts, you can analyze plot images.
    - Use the command: vision <plot_file_path>
-   - The plot file must reside in the data/ directory.
-   - The images are plots saved after you run experiments. The file names are projects\\data\\ESR_plot.png, projects\\data\\FindNV_plot.png, projects\\data\\GalvoScan_plot.png and projects\\data\\Optimization_plot.png
+   - IMPORTANT: All experiment outputs are automatically saved to the current run's data directory (projects/NVExperiment/runs/run_(insert TIMESTAMP here)/data/).
+   - When analyzing plots, simply use the base filename (e.g., 'vision ESR_plot.png') - the system will automatically locate it in the current run's data directory.
+   - DO NOT use paths like 'projects/data/ESR_plot.png' as these are incorrect. The correct plots are always in the run-specific data directory.
    - When reading GalvoScan_plot.png, NVs are accociate with large bright dots, estimate and read out the center coordinates of bright dots for next steps.
 7) Typical usage flow for ESR, can be migrated to doing any experiments by replacing 'esr' with the experiment:
-   - Begin by reading the output from the most recent experiment (if you have already run experiments) stored in the data/ directory. Carefully analyze these results to identify results and areas for improvement.
+   - Begin by reading the output from the most recent experiment (if you have already run experiments) stored in the current run's data directory. Carefully analyze these results to identify results and areas for improvement.
    - Reflect on the insights gained from the previous experiment and decide on the adjustments needed for the upcoming run.
-   - Read the default config at projects\\configs\\default_esr_config.json.
-   - Write a new config, e.g. projects\\configs\\my_new_experiment.json, changing relevant fields based on the insight from the previous experiment.
-   - Run the command: 
-         py projects\\experiment_scripts\\ESR.py --config configs\\my_new_experiment.json
+   - Read the default config at projects/configs/default_esr_config.json.
+   - Write a new config, e.g. projects/configs/my_new_experiment.json, changing relevant fields based on the insight from the previous experiment.
+   - Run the command with the output directory explicitly specified: 
+         py projects/experiment_scripts/ESR.py --config configs/my_new_experiment.json --output-dir projects/NVExperiment/runs/run_(insert TIMESTAMP here)/data/
+   - After the experiment completes, analyze the results using 'vision ESR_plot.png' to see the plot that was generated.
 8) Behavior:
    - If you <read> a file, you receive its content internally. If you want the user to see it, produce a <action type="message"> block.
    - If you <write> a file, ask user permission. If denied, do not write.
@@ -340,10 +344,11 @@ End of system instructions.
         """
         Parse the run command to extract the script and config file.
         Expected format:
-            py experiment_scripts\<script_name>.py --config <config_file> [--output-dir <output_directory>]
+            py experiment_scripts/<script_name>.py --config <config_file> [--output-dir <output_directory>]
         where <script_name> is one of ESR, find_nv, galvo_scan, or optimize.
         """
-        pattern = r"py\s+(?P<path>experiment_scripts[\\/](ESR\.py|find_nv\.py|galvo_scan\.py|optimize\.py))\s+--config\s+(?P<config>[\w\\./-]+)(?:\s+--output-dir\s+(?P<output_dir>[\w\\./-]+))?"
+        # More flexible pattern to handle different path formats and whitespace variations
+        pattern = r"py\s+(?P<path>(?:projects[\\/])?(?:experiment_scripts|NVExperiment[\\/]scripts)[\\/](ESR\.py|find_nv\.py|galvo_scan\.py|optimize\.py))\s+--config\s+(?P<config>[\w\\./-]+)(?:\s+--output-dir\s+(?P<output_dir>[\w\\./-]+))?"
         m = re.search(pattern, command)
         if m:
             result = {"script": m.group("path"), "config": m.group("config")}
@@ -351,7 +356,10 @@ End of system instructions.
                 result["output_dir"] = m.group("output_dir")
             return result
         else:
-            raise ValueError("Run command parsing error: command must be in the format: py experiment_scripts\\<script_name>.py --config <config_file> [--output-dir <output_directory>]")
+            # More informative error message that includes the command that failed to parse
+            allowed_scripts = "ESR.py, find_nv.py, galvo_scan.py, or optimize.py"
+            error_msg = f"Run command parsing error for command: '{command}'. \nCommand must be in the format: py experiment_scripts/<script_name>.py --config <config_file> [--output-dir <output_directory>] \nwhere <script_name> is one of {allowed_scripts}"
+            raise ValueError(error_msg)
 
     def _action_run_command(self, command: str):
         """
@@ -360,16 +368,17 @@ End of system instructions.
         self._log("action", f"RUN: {command}")
         try:
             parsed = self._parse_run_command(command)
-            allowed_scripts = ["experiment_scripts/ESR.py", "experiment_scripts/find_nv.py", "experiment_scripts/galvo_scan.py", "experiment_scripts/optimize.py"]
+            allowed_scripts = ["experiment_scripts/ESR.py", "experiment_scripts/find_nv.py", "experiment_scripts/galvo_scan.py", "experiment_scripts/optimize.py", 
+                           "NVExperiment/scripts/ESR.py", "NVExperiment/scripts/find_nv.py", "NVExperiment/scripts/galvo_scan.py", "NVExperiment/scripts/optimize.py"]
             script_normalized = parsed["script"].replace("\\", "/")
             if script_normalized not in allowed_scripts:
                 raise ValueError("Command not allowed: script not among allowed options.")
             
-            # Add output directory parameter if not already specified
-            if "output_dir" not in parsed:
-                # Append the data directory to the command
-                command = f"{command} --output-dir {self.data_dir}"
-                self._log("action", f"Modified command with output directory: {command}")
+            # Ensure the data directory exists
+            os.makedirs(self.data_dir, exist_ok=True)
+            
+            # Log the command as is - the agent should have included the output directory
+            self._log("action", f"Running command: {command}")
             
             result = subprocess.run(command, shell=True, check=True, capture_output=True)
             stdout_text = result.stdout.decode()
@@ -401,12 +410,30 @@ End of system instructions.
         Analyze a plot image from the data/ directory using the vision model, including conversation context.
         """
         self._log("action", f"VISION: {filepath}")
+        
+        # Handle both absolute paths and relative paths
+        if not os.path.isabs(filepath):
+            # If it's just a filename, assume it's in the current run's data directory
+            if os.path.basename(filepath) == filepath:
+                filepath = os.path.join(self.data_dir, filepath)
+            # If it starts with 'projects/data/' or similar patterns, convert to the correct path
+            elif any(filepath.startswith(prefix) for prefix in ['projects/data/', 'projects\\data\\', 'data/', 'data\\']):
+                plot_filename = os.path.basename(filepath)
+                filepath = os.path.join(self.data_dir, plot_filename)
+            # Handle paths that might be in the format projects/NVExperiment/runs/run_*/data/
+            elif 'NVExperiment/runs/' in filepath.replace('\\', '/') or 'data' in filepath:
+                # Try to extract just the filename if it's a complex path
+                plot_filename = os.path.basename(filepath)
+                filepath = os.path.join(self.data_dir, plot_filename)
+        
+        # Check if the file is in the allowed data directory
         if not filepath.startswith(self.data_dir):
-            msg = f"[System] VISION denied: {filepath} is not in the allowed data directory."
+            msg = f"[System] VISION denied: {filepath} is not in the allowed data directory ({self.data_dir})."
             print(msg)
             self._log("action", msg)
             self.conversation_history.append({"role": "assistant", "content": msg})
             return
+            
         if not os.path.exists(filepath):
             msg = f"[System] File not found: {filepath}"
             print(msg)
