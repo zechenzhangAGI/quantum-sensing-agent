@@ -8,6 +8,7 @@ from anthropic_engine import call_llm, call_vision  # Import both text and visio
 # from deepseek_engine import call_llm, call_vision  # Import both text and vision functions
 #from anthropic_engine import call_vision
 #from deepseek_engine import call_llm
+from rag_engine import embed_text, save_embeddings, load_embeddings, search_similar
 
 class NVExperimentAgent:
     def __init__(self):
@@ -26,6 +27,10 @@ class NVExperimentAgent:
         self.data_dir   = os.path.join(self.base_dir, "data")
         self.logs_dir   = os.path.join(self.base_dir, "logs")
         self.scripts_dir = "experiment_scripts"  # updated directory for scripts
+        
+        # Directory for storing embeddings
+        self.embeddings_dir = os.path.join(self.project_root_dir, self.project_name, "embeddings")
+        os.makedirs(self.embeddings_dir, exist_ok=True)
 
         # The entire conversation history (user messages, assistant messages, actions, etc.)
         self.conversation_history = []
@@ -153,9 +158,49 @@ End of system instructions.
 
     def _build_prompt(self) -> str:
         """
-        Combine system_instruction and conversation_history into a single prompt.
+        Combine system_instruction, RAG results, and conversation_history into a single prompt.
+        Also include suggestions for relevant plots.
         """
         prompt = self.system_instruction.strip()
+        
+        # Get the most recent user message for RAG query
+        recent_user_messages = [turn["content"] for turn in self.conversation_history 
+                               if turn["role"] == "user"]
+        
+        if recent_user_messages:
+            # Use the most recent user message as the query
+            query = recent_user_messages[-1]
+            
+            # Log that we're performing a RAG query
+            print(f"[RAG] Performing RAG query for: '{query[:50]}...' if len(query) > 50 else query")
+            
+            # Perform RAG search
+            relevant_contexts = self._get_rag_context(query)
+            
+            if relevant_contexts:
+                print(f"[RAG] Retrieved relevant context from previous conversations")
+                print(f"Retrieved context: {relevant_contexts}")
+                prompt += "\n\nRelevant context from previous conversations:\n"
+                prompt += relevant_contexts
+            else:
+                print("[RAG] No relevant context found in previous conversations")
+            
+            # Check for relevant plots
+            relevant_plots = self._get_relevant_plots(query)
+            if relevant_plots:
+                plot_filenames = [os.path.basename(p) for p in relevant_plots]
+                print(f"[RAG] Found relevant plots: {plot_filenames}")
+                self._log("rag", f"Relevant plots: {plot_filenames}")
+                
+                prompt += "\n\nRelevant plots that might help with this query:\n"
+                for plot_path in relevant_plots:
+                    plot_filename = os.path.basename(plot_path)
+                    prompt += f"- {plot_filename}\n"
+                prompt += "\nYou can analyze these plots using the 'vision' action if needed."
+            else:
+                print("[RAG] No relevant plots found")
+        
+        # Add conversation history
         for turn in self.conversation_history:
             role = turn["role"]
             content = turn["content"]
@@ -165,6 +210,7 @@ End of system instructions.
                 prompt += f"\nAssistant: {content}"
             else:
                 prompt += f"\n{role.capitalize()}: {content}"
+        
         prompt += "\n\nPlease respond with a <think> block and any <action> blocks you need for the next step. Please carefully wait for user and experiment feedback before proceeding to too many actions."
         return prompt
 
@@ -190,9 +236,15 @@ End of system instructions.
         """
         Process user prompt: log it, build the prompt, call the LLM, parse and execute actions.
         """
+        print(f"\n[Agent] Processing user input: '{user_message[:50]}{'...' if len(user_message) > 50 else ''}'")  
         self._log("user", user_message)
         self.conversation_history.append({"role": "user", "content": user_message})
+        
+        print("[Agent] Building prompt with RAG context...")
+        self._log("agent", "Building prompt with RAG context")
         full_prompt = self._build_prompt()
+        
+        print("[Agent] Calling LLM with enhanced prompt...")
         llm_response = call_llm(
             user_prompt=full_prompt,
             system_message=self.system_instruction,
@@ -447,16 +499,303 @@ End of system instructions.
         print(msg)
         self._log("action", msg)
         self.conversation_history.append({"role": "assistant", "content": msg})
+    
+    def _get_available_plots(self):
+        """
+        Scan the data directory for plot files and return their paths.
         
+        Returns:
+            List of plot file paths
+        """
+        plot_files = []
+        if os.path.exists(self.data_dir):
+            for filename in os.listdir(self.data_dir):
+                if filename.endswith('.png') and any(plot_type in filename for plot_type in 
+                                                  ['ESR', 'FindNV', 'GalvoScan', 'Optimization']):
+                    plot_files.append(os.path.join(self.data_dir, filename))
+        return plot_files
+    
+    def _get_relevant_plots(self, query):
+        """
+        Check if there are any plots in the data directory that might be relevant to the query.
+        
+        Args:
+            query: The user's query
+            
+        Returns:
+            List of relevant plot paths
+        """
+        relevant_plots = []
+        
+        # Define keywords for each plot type
+        plot_keywords = {
+            'ESR': ['esr', 'electron spin resonance', 'frequency', 'spectrum'],
+            'FindNV': ['findnv', 'find nv', 'nv center', 'diamond', 'locate'],
+            'GalvoScan': ['galvoscan', 'galvo', 'scan', 'mapping', 'surface'],
+            'Optimization': ['optimize', 'optimization', 'parameter', 'tuning']
+        }
+        
+        # Check if any keywords are in the query
+        query_lower = query.lower()
+        matching_types = []
+        for plot_type, keywords in plot_keywords.items():
+            if any(keyword in query_lower for keyword in keywords):
+                matching_types.append(plot_type)
+        
+        # Get all plots in the data directory
+        available_plots = self._get_available_plots()
+        
+        # Filter for relevant plots
+        for plot_path in available_plots:
+            plot_filename = os.path.basename(plot_path)
+            if any(plot_type in plot_filename for plot_type in matching_types) or not matching_types:
+                relevant_plots.append(plot_path)
+        
+        return relevant_plots
+    
+    def _track_analyzed_plots(self):
+        """
+        Track which plots have been analyzed in the current session.
+        
+        Returns:
+            Dictionary mapping plot filenames to their analysis status
+        """
+        analyzed_plots = {}
+        
+        # Get all plots in the data directory
+        available_plots = self._get_available_plots()
+        for plot_path in available_plots:
+            plot_filename = os.path.basename(plot_path)
+            analyzed_plots[plot_filename] = False
+        
+        # Check which plots have been analyzed
+        for turn in self.conversation_history:
+            if "VISION:" in turn.get("content", ""):
+                plot_path = turn["content"].split("VISION:")[1].strip()
+                plot_filename = os.path.basename(plot_path)
+                if plot_filename in analyzed_plots:
+                    analyzed_plots[plot_filename] = True
+        
+        return analyzed_plots
+    
+    def _suggest_unanalyzed_plots(self):
+        """
+        Suggest plots that haven't been analyzed yet.
+        
+        Returns:
+            List of unanalyzed plot paths
+        """
+        analyzed_plots = self._track_analyzed_plots()
+        unanalyzed_plots = []
+        
+        for plot_filename, analyzed in analyzed_plots.items():
+            if not analyzed:
+                unanalyzed_plots.append(os.path.join(self.data_dir, plot_filename))
+        
+        return unanalyzed_plots
+    
+    def _get_rag_context(self, query, top_k=3):
+        """
+        Retrieve relevant context from previous conversations using RAG.
+        Highlight any plot references in the retrieved context.
+        
+        Args:
+            query: The user's query to search against
+            top_k: Number of most relevant contexts to retrieve
+            
+        Returns:
+            String containing the most relevant contexts with plot references highlighted
+        """
+        # Check if embeddings directory exists and has files
+        if not os.path.exists(self.embeddings_dir):
+            print(f"[RAG] Embeddings directory {self.embeddings_dir} does not exist")
+            return ""
+            
+        # Load all embeddings from the embeddings directory
+        embeddings_files = [os.path.join(self.embeddings_dir, f) 
+                            for f in os.listdir(self.embeddings_dir) 
+                            if f.endswith('.json')]
+        
+        if not embeddings_files:
+            print(f"[RAG] No embedding files found in {self.embeddings_dir}")
+            return ""
+        
+        print(f"[RAG] Found {len(embeddings_files)} embedding files to search")
+        self._log("rag", f"Searching {len(embeddings_files)} embedding files for query: {query}")
+        
+        # Search for similar contexts across all embedding files
+        results = []
+        for embedding_file in embeddings_files:
+            try:
+                print(f"[RAG] Searching file: {os.path.basename(embedding_file)}")
+                similar_contexts = search_similar(query, embedding_file, top_k=top_k)
+                if similar_contexts:
+                    print(f"[RAG] Found {len(similar_contexts)} relevant contexts in {os.path.basename(embedding_file)}")
+                    results.extend(similar_contexts)
+                else:
+                    print(f"[RAG] No relevant contexts found in {os.path.basename(embedding_file)}")
+            except Exception as e:
+                print(f"[RAG] Error searching embeddings file {embedding_file}: {str(e)}")
+                self._log("rag", f"Error searching embeddings file {embedding_file}: {str(e)}")
+        
+        # Sort by similarity score and take top_k
+        results.sort(key=lambda x: x["score"], reverse=True)
+        results = results[:top_k]
+        
+        # Format the results
+        if not results:
+            print(f"[RAG] No relevant contexts found after searching all embedding files")
+            return ""
+        
+        print(f"[RAG] Found {len(results)} relevant contexts after filtering by similarity")
+        
+        context_text = []
+        for i, result in enumerate(results):
+            # Check if the result contains plot references
+            text = result["text"]
+            plot_references = result.get("plot_references", [])
+            
+            # Log the result
+            print(f"[RAG] Context {i+1}/{len(results)}: Similarity score {result['score']:.2f}")
+            if plot_references:
+                print(f"[RAG] Context {i+1} contains {len(plot_references)} plot references")
+            
+            # Add the context with plot references highlighted
+            context_entry = f"Context (similarity: {result['score']:.2f}):\n{text}"
+            if plot_references:
+                context_entry += "\n\nRelevant plot references:\n" + "\n".join(plot_references)
+            
+            context_text.append(context_entry)
+        
+        return "\n\n".join(context_text)
+    
+    def save_conversation_embeddings(self):
+        """
+        Embed the entire conversation history and save to the embeddings directory.
+        Also include references to any plots that were analyzed.
+        """
+        if not self.conversation_history:
+            print("[Embeddings] No conversation history to save")
+            return
+        
+        print(f"[Embeddings] Preparing to save conversation with {len(self.conversation_history)} turns")
+        self._log("embeddings", f"Saving conversation with {len(self.conversation_history)} turns")
+        
+        # Format conversation for embedding
+        conversation_text = []
+        
+        # Track which plots have been analyzed in this conversation
+        analyzed_plots = set()
+        
+        # Count message types for logging
+        user_messages = 0
+        assistant_messages = 0
+        vision_analyses = 0
+        
+        for turn in self.conversation_history:
+            role = turn["role"]
+            content = turn["content"]
+            conversation_text.append(f"{role}: {content}")
+            
+            # Count message types
+            if role == "user":
+                user_messages += 1
+            elif role == "assistant":
+                assistant_messages += 1
+            
+            # Check if this is a vision analysis result
+            if role == "assistant" and "[System] Vision analysis result:" in content:
+                vision_analyses += 1
+                # Extract the plot filename from previous messages
+                for i in range(len(self.conversation_history)):
+                    if (i < len(self.conversation_history) - 1 and 
+                        "VISION:" in self.conversation_history[i].get("content", "")):
+                        plot_path = self.conversation_history[i]["content"].split("VISION:")[1].strip()
+                        plot_filename = os.path.basename(plot_path)
+                        analyzed_plots.add(plot_filename)
+        
+        print(f"[Embeddings] Conversation summary: {user_messages} user messages, {assistant_messages} assistant responses, {vision_analyses} vision analyses")
+        
+        # Add references to all plots in the data directory
+        available_plots = self._get_available_plots()
+        if available_plots:
+            print(f"[Embeddings] Including {len(available_plots)} plots in embedding data")
+            conversation_text.append("\nAvailable plots in this session:")
+            for plot_path in available_plots:
+                plot_filename = os.path.basename(plot_path)
+                status = "Analyzed" if plot_filename in analyzed_plots else "Not analyzed"
+                conversation_text.append(f"- {plot_filename} ({status}): {plot_path}")
+        else:
+            print("[Embeddings] No plots available to include in embedding data")
+        
+        # Join all turns with newlines
+        full_text = "\n".join(conversation_text)
+        
+        # Generate a timestamp for the embedding file
+        timestamp = self._current_timestamp_for_filename()
+        embedding_file = os.path.join(self.embeddings_dir, f"conversation_{timestamp}.json")
+        
+        # Save the embeddings
+        try:
+            # Count existing embedding files before saving
+            existing_files = [f for f in os.listdir(self.embeddings_dir) if f.endswith('.json')]
+            print(f"[Embeddings] Current embedding files count: {len(existing_files)}")
+            
+            # Save the new embeddings
+            save_embeddings(full_text, embedding_file)
+            
+            # Verify the file was created
+            if os.path.exists(embedding_file):
+                print(f"[Embeddings] Successfully saved conversation to {embedding_file}")
+                self._log("embeddings", f"Successfully saved conversation to {embedding_file}")
+                
+                # Count embedding files after saving to confirm a new one was added
+                updated_files = [f for f in os.listdir(self.embeddings_dir) if f.endswith('.json')]
+                print(f"[Embeddings] Updated embedding files count: {len(updated_files)}")
+                if len(updated_files) > len(existing_files):
+                    print("[Embeddings] Confirmed: New embedding file was created")
+                else:
+                    print("[Embeddings] Warning: No new embedding file was created")
+            else:
+                print(f"[Embeddings] Warning: Failed to verify creation of {embedding_file}")
+        except Exception as e:
+            print(f"[Embeddings] Error saving embeddings: {str(e)}")
+            self._log("embeddings", f"Error saving embeddings: {str(e)}")
+
 
 if __name__ == "__main__":
     agent = NVExperimentAgent()
     print("=== NV Experiment Agent CLI ===")
     print("Type 'exit' to quit.\n")
-    while True:
-        user_in = input("You: ")
-        if user_in.lower() in ["quit", "exit"]:
-            print("Goodbye!")
-            break
-        agent.handle_user_input(user_in)
+    
+    # Print information about the embeddings directory
+    print(f"[Embeddings] Using embeddings directory: {agent.embeddings_dir}")
+    if os.path.exists(agent.embeddings_dir):
+        existing_files = [f for f in os.listdir(agent.embeddings_dir) if f.endswith('.json')]
+        print(f"[Embeddings] Found {len(existing_files)} existing embedding files")
+    else:
+        print(f"[Embeddings] Creating new embeddings directory")
+        os.makedirs(agent.embeddings_dir, exist_ok=True)
+    
+    try:
+        while True:
+            user_in = input("You: ")
+            if user_in.lower() in ["quit", "exit"]:
+                print("\n[Embeddings] Saving conversation embeddings and plot metadata before exit...")
+                agent.save_conversation_embeddings()
+                print("Goodbye!")
+                break
+            agent.handle_user_input(user_in)
+    except KeyboardInterrupt:
+        print("\n\n[Embeddings] Detected keyboard interrupt. Saving conversation embeddings before exit...")
+        agent.save_conversation_embeddings()
+        print("Goodbye!")
+    except Exception as e:
+        print(f"\n\n[Error] An unexpected error occurred: {str(e)}")
+        print("[Embeddings] Attempting to save conversation embeddings before exit...")
+        try:
+            agent.save_conversation_embeddings()
+        except Exception as save_error:
+            print(f"[Embeddings] Failed to save embeddings: {str(save_error)}")
+        print("Goodbye!")
 
