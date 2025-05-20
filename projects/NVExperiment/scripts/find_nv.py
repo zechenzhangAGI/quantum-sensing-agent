@@ -5,7 +5,7 @@ import importlib.util
 import matplotlib.pyplot as plt
 import argparse
 from datetime import datetime
-sys.path.append(r'C:\Users\NVAFM_6th_fl_2\NV-Automation\b26_toolkit_for_agent\b26_toolkit-master')
+sys.path.append(r"C:\\Users\\NVAFM_6th_fl_2\\NV-Automation\\b26_toolkit_for_agent\\b26_toolkit-master")
 from pylabcontrol.core import Script
 from b26_toolkit.scripts.find_nv import FindNV
 
@@ -62,7 +62,7 @@ def main():
     # 7. Save the figure to the specified output directory with a timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     os.makedirs(data_dir, exist_ok=True)
-    outpath = os.path.join(data_dir, f"FindNV_plot.png")
+    outpath = os.path.join(data_dir, f"FindNV_plot_{timestamp}.png")
     fig.savefig(outpath, dpi=150)
     print(f"[Runner] Saved FindNV plot to: {outpath}")
 

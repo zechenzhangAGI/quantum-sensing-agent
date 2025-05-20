@@ -11,7 +11,11 @@ from b26_toolkit.scripts.galvo_scan.galvo_scan import GalvoScan
 def main():
     """
     Usage:
+<<<<<<< HEAD
+      py galvo_scan.py --config configs/galvo_experiment_YYYY-MM-DD.json
+=======
       py galvo_scan.py --config configs/gavlo_experiment_YYYY-MM-DD.json [--output-dir path/to/output/directory]
+>>>>>>> origin/master
     """
     # 1. Parse command-line args
     parser = argparse.ArgumentParser(description='Run GalvoScan experiment')
@@ -38,10 +42,6 @@ def main():
         print(f"[Runner] ESR script not found at: {script_path}")
         sys.exit(1)
 
-   
-
-    
-
     # 4. Instantiate the GalvoScan class
     GS = GalvoScan(config_file=config_file)
     print("[Runner] Created GalvoScan instance.")
@@ -60,8 +60,12 @@ def main():
 
     # 7. Save the figure to the specified output directory with a timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+# <<<<<<< HEAD
+#     data_dir = "data"  # Adjust if your layout differs -- PASS IN A COMMAND LINE ARGUMENT HERE
+# =======
+# >>>>>>> origin/master
     os.makedirs(data_dir, exist_ok=True)
-    outpath = os.path.join(data_dir, f"GalvoScan_plot.png")
+    outpath = os.path.join(data_dir, f"GalvoScan_plot_{timestamp}.png")
     fig.savefig(outpath, dpi=150)
     print(f"[Runner] Saved GalvoScan plot to: {outpath}")
 

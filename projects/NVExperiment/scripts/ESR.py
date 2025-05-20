@@ -57,7 +57,7 @@ def main():
     # 7. Save the figure to the specified output directory with a timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     os.makedirs(data_dir, exist_ok=True)
-    outpath = os.path.join(data_dir, f"ESR_plot.png")
+    outpath = os.path.join(data_dir, f"ESR_plot_{timestamp}.png")
     fig.savefig(outpath, dpi=150)
     print(f"[Runner] Saved ESR plot to: {outpath}")
 
