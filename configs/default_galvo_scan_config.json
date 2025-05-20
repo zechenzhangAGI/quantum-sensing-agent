@@ -1,0 +1,48 @@
+{
+    "scripts": {
+      "galvo_scan": {
+        "class": "GalvoScan",
+        "filepath": "C:\\Users\\NVAFM_6th_fl_2\\NV-Automation\\b26_toolkit_for_agent\\b26_toolkit-master\\b26_toolkit\\scripts\\galvo_scan\\galvo_scan.py",
+        "info": "Galvo scan script for imaging using galvo mirrors.",
+        "instruments": {
+          "NI6353": {
+            "class": "NI6353",
+            "settings": {
+              "device": "Dev1"
+            }
+          },
+          "PB": {
+            "class": "LISE607RTPulseBlaster",
+            "settings": {}
+          }
+        },
+        "settings": {
+          "point_a": {
+            "x": -4,
+            "y": -4
+          },
+          "point_b": {
+            "x": 4,
+            "y": 4
+          },
+          "RoI_mode": "corner",
+          "num_points": {
+            "x": 126,
+            "y": 126
+          },
+          "time_per_pt": 0.002,
+          "settle_time": 0.0002,
+          "max_counts_plot": -1,
+          "min_counts_plot": -1,
+          "DAQ_channels": {
+            "x_ao_channel": "ao0",
+            "y_ao_channel": "ao1",
+            "counter_channel": "ctr0"
+          },
+          "ending_behavior": "return_to_start",
+          "daq_type": "PCI"
+        }
+      }
+    }
+  }
+  
