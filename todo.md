@@ -41,3 +41,12 @@ PROBLEM -- different OS = different filepath convention
 ## set sail?!
 Refer to "This will lend itself..." for next big step.
 ReAct prompting? -- could be good to daisy-chain together data, especially with the structured database, chaining experiments, etc.
+
+# TODO --03 June
+## We have implemented a RAG system in the agent.py that searches past converstation history to find new information when executing new tasks. However, it is done using the user content as embedding search and on the other hand also saves the entire conversation history as one emedding text file. Instead, we want to
+--1. Make the agent store the embeddings as chunks of texts every few tunrs (where the number of turns can be set, default is 10 let's say)
+--2. When retrieving the texts using RAG, we want to implement a new strategy where the agent has the option to search through past history using RAG when it gets stuck, ie. it can use RAG as a tool. in this case, think about how to implement this. For example, the query embedding should be the recent conversation history rather than the pure user content. Maybe you should also change system prompt since now RAG is a tool for the agent to retrieve relevant info from past. 
+--3. Right now it seems like I have not implemented the cached input from anthropic. checkout how to implement that to save money 
+
+  Note: The agent.py file is written for the final environment on windows that controls the actual experiments. You can create a mock test environment which might be the agent_mac.py file (but you have to tweek it along) to test the implemented functionalities. also read the test scripts for reference.  
+
