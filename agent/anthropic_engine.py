@@ -43,12 +43,20 @@ def call_llm(
     # The snippet you provided looks like a newer/beta interface.
     # We'll mirror your snippet as closely as possible:
 
+    system_content_blocks = [
+        {
+            "type": "text",
+            "text": system_message, # The original system_message string
+            "cache_control": {"type": "ephemeral"}
+        }
+    ]
+
     response = client.messages.create(
         model=model,
         max_tokens=max_tokens,
         temperature=temperature,
         # The snippet shows a "system" parameter for the system message:
-        system=system_message,
+        system=system_content_blocks,
         messages=[
             {
                 "role": "user",

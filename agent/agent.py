@@ -35,6 +35,7 @@ class NVExperimentAgent:
 
         # The entire conversation history (user messages, assistant messages, actions, etc.)
         self.conversation_history = []
+        self.embedding_chunk_size = 10
 
         # Extended system instruction with updated run command and vision option details
         self.system_instruction = (
@@ -62,7 +63,7 @@ You have the following constraints and abilities:
      }}
      </action>
      ```
-   - The `"type"` must be one of: `"message"`, `"read"`, `"write"`, `"run"`, or `"vision"`.
+   - The `"type"` must be one of: `"message"`, `"read"`, `"write"`, `"run"`, `"vision"`, or `"rag_search"`.
 
 In order to execute the script, you may use one of two cases. The first case is the default case, where there aren't any specific configs that the user wishes to change and you may simply read from the default base directories. In that case, follow the below instructions:
    
@@ -156,7 +157,23 @@ In order to execute the script, you may use one of two cases. The first case is 
 
 11) Restrictions:
     - Do not reveal or replicate your chain-of-thought except inside the `<think>` block.
-    - Do not produce any actions outside of `"message"`, `"read"`, `"write"`, `"run"`, or `"vision"`.
+    - Do not produce any actions outside of `"message"`, `"read"`, `"write"`, `"run"`, `"vision"`, or `"rag_search"`.
+
+12) RAG Search Tool:
+   - If you are stuck, unsure how to proceed, or believe relevant information might exist in past conversations, you can use the "rag_search" tool.
+   - This tool will search through the history of saved conversation embeddings.
+   - To use it, produce an <action> block with type "rag_search". The "content" of this action should be a string representing your query.
+   - For example, if you want to search for information about a specific error you encountered before, you could use:
+     ```
+     <action>
+     {{
+       "type": "rag_search",
+       "content": "How was the 'XYZ' error resolved in previous experiments?"
+     }}
+     </action>
+     ```
+   - The results of the RAG search will be provided to you as an observation in the conversation history. Use these results to inform your next steps.
+   - The query for "rag_search" should be specific to the information you are looking for. You can use the recent conversation history to help formulate this query if needed.
 """
         )
 
@@ -330,6 +347,10 @@ In order to execute the script, you may use one of two cases. The first case is 
                         "role": "assistant",
                         "content": f"[Agent] VISION DENIED for {content}"
                     })
+            elif a_type == "rag_search":
+                # For RAG search, we don't typically need explicit human permission
+                # as it's an internal information retrieval tool.
+                self._action_rag_search(content)
             else:
                 print(f"[System] Unknown action type: {a_type}")
                 self._log("action", f"Unknown action {a_type}")
@@ -702,96 +723,110 @@ In order to execute the script, you may use one of two cases. The first case is 
     
     def save_conversation_embeddings(self):
         """
-        Embed the entire conversation history and save to the embeddings directory.
-        Also include references to any plots that were analyzed.
+        Embed the conversation history in chunks and save to the embeddings directory.
+        Each chunk includes references to any plots analyzed within that chunk and all available plots.
         """
         if not self.conversation_history:
             print("[Embeddings] No conversation history to save")
             return
-        
-        print(f"[Embeddings] Preparing to save conversation with {len(self.conversation_history)} turns")
-        self._log("embeddings", f"Saving conversation with {len(self.conversation_history)} turns")
-        
-        # Format conversation for embedding
-        conversation_text = []
-        
-        # Track which plots have been analyzed in this conversation
-        analyzed_plots = set()
-        
-        # Count message types for logging
-        user_messages = 0
-        assistant_messages = 0
-        vision_analyses = 0
-        
-        for turn in self.conversation_history:
-            role = turn["role"]
-            content = turn["content"]
-            conversation_text.append(f"{role}: {content}")
+
+        print(f"[Embeddings] Preparing to save conversation with {len(self.conversation_history)} turns in chunks of {self.embedding_chunk_size}.")
+        self._log("embeddings", f"Saving conversation with {len(self.conversation_history)} turns in chunks of {self.embedding_chunk_size}.")
+
+        chunk_index = 0
+        for i in range(0, len(self.conversation_history), self.embedding_chunk_size):
+            chunk = self.conversation_history[i:i + self.embedding_chunk_size]
+            chunk_index += 1
             
-            # Count message types
-            if role == "user":
-                user_messages += 1
-            elif role == "assistant":
-                assistant_messages += 1
-            
-            # Check if this is a vision analysis result
-            if role == "assistant" and "[System] Vision analysis result:" in content:
-                vision_analyses += 1
-                # Extract the plot filename from previous messages
-                for i in range(len(self.conversation_history)):
-                    if (i < len(self.conversation_history) - 1 and 
-                        "VISION:" in self.conversation_history[i].get("content", "")):
-                        plot_path = self.conversation_history[i]["content"].split("VISION:")[1].strip()
+            print(f"[Embeddings] Processing chunk {chunk_index} ({len(chunk)} turns)")
+            self._log("embeddings", f"Processing chunk {chunk_index} ({len(chunk)} turns)")
+
+            chunk_text_parts = []
+            chunk_analyzed_plots = set()
+
+            # Process turns in the current chunk
+            for turn in chunk:
+                role = turn["role"]
+                content = turn["content"]
+                chunk_text_parts.append(f"{role}: {content}")
+
+                # Identify plots analyzed in this chunk
+                if role == "action" and content.startswith("VISION:"):
+                    try:
+                        plot_path = content.split("VISION:")[1].strip()
                         plot_filename = os.path.basename(plot_path)
-                        analyzed_plots.add(plot_filename)
-        
-        print(f"[Embeddings] Conversation summary: {user_messages} user messages, {assistant_messages} assistant responses, {vision_analyses} vision analyses")
-        
-        # Add references to all plots in the data directory
-        available_plots = self._get_available_plots()
-        if available_plots:
-            print(f"[Embeddings] Including {len(available_plots)} plots in embedding data")
-            conversation_text.append("\nAvailable plots in this session:")
-            for plot_path in available_plots:
-                plot_filename = os.path.basename(plot_path)
-                status = "Analyzed" if plot_filename in analyzed_plots else "Not analyzed"
-                conversation_text.append(f"- {plot_filename} ({status}): {plot_path}")
-        else:
-            print("[Embeddings] No plots available to include in embedding data")
-        
-        # Join all turns with newlines
-        full_text = "\n".join(conversation_text)
-        
-        # Generate a timestamp for the embedding file
-        timestamp = self._current_timestamp_for_filename()
-        embedding_file = os.path.join(self.embeddings_dir, f"conversation_{timestamp}.json")
-        
-        # Save the embeddings
-        try:
-            # Count existing embedding files before saving
-            existing_files = [f for f in os.listdir(self.embeddings_dir) if f.endswith('.json')]
-            print(f"[Embeddings] Current embedding files count: {len(existing_files)}")
-            
-            # Save the new embeddings
-            save_embeddings(full_text, embedding_file)
-            
-            # Verify the file was created
-            if os.path.exists(embedding_file):
-                print(f"[Embeddings] Successfully saved conversation to {embedding_file}")
-                self._log("embeddings", f"Successfully saved conversation to {embedding_file}")
-                
-                # Count embedding files after saving to confirm a new one was added
-                updated_files = [f for f in os.listdir(self.embeddings_dir) if f.endswith('.json')]
-                print(f"[Embeddings] Updated embedding files count: {len(updated_files)}")
-                if len(updated_files) > len(existing_files):
-                    print("[Embeddings] Confirmed: New embedding file was created")
-                else:
-                    print("[Embeddings] Warning: No new embedding file was created")
+                        chunk_analyzed_plots.add(plot_filename)
+                        print(f"[Embeddings] Plot {plot_filename} marked as analyzed in chunk {chunk_index}")
+                    except Exception as e:
+                        print(f"[Embeddings] Error parsing VISION action in chunk {chunk_index}: {content} - {e}")
+                        self._log("embeddings", f"Error parsing VISION action in chunk {chunk_index}: {content} - {e}")
+                elif role == "assistant" and "[System] Vision analysis result:" in content:
+                    # Attempt to find the corresponding VISION action for this result if not already captured
+                    # This requires looking back for the VISION action that led to this result.
+                    # For simplicity, we primarily rely on the "action" log for "VISION:"
+                    pass
+
+
+            # Add information about all available plots to this chunk's text
+            available_plots = self._get_available_plots()
+            if available_plots:
+                chunk_text_parts.append("\nAvailable plots in this session (at the time of this chunk):")
+                for plot_path in available_plots:
+                    plot_filename = os.path.basename(plot_path)
+                    status = "Analyzed in this chunk" if plot_filename in chunk_analyzed_plots else "Not analyzed in this chunk"
+                    chunk_text_parts.append(f"- {plot_filename} ({status}): {plot_path}")
             else:
-                print(f"[Embeddings] Warning: Failed to verify creation of {embedding_file}")
-        except Exception as e:
-            print(f"[Embeddings] Error saving embeddings: {str(e)}")
-            self._log("embeddings", f"Error saving embeddings: {str(e)}")
+                chunk_text_parts.append("\nNo plots available at the time of this chunk.")
+
+            full_chunk_text = "\n".join(chunk_text_parts)
+            timestamp = self._current_timestamp_for_filename()
+            embedding_chunk_file = os.path.join(self.embeddings_dir, f"conversation_chunk_{chunk_index}_{timestamp}.json")
+
+            try:
+                print(f"[Embeddings] Saving chunk {chunk_index} to {embedding_chunk_file}")
+                save_embeddings(full_chunk_text, embedding_chunk_file)
+                if os.path.exists(embedding_chunk_file):
+                    print(f"[Embeddings] Successfully saved chunk {chunk_index} to {embedding_chunk_file}")
+                    self._log("embeddings", f"Successfully saved chunk {chunk_index} to {embedding_chunk_file}")
+                else:
+                    print(f"[Embeddings] Warning: Failed to verify creation of {embedding_chunk_file}")
+                    self._log("embeddings", f"Warning: Failed to verify creation of {embedding_chunk_file}")
+            except Exception as e:
+                print(f"[Embeddings] Error saving embeddings for chunk {chunk_index}: {str(e)}")
+                self._log("embeddings", f"Error saving embeddings for chunk {chunk_index}: {str(e)}")
+
+        # Existing overall logging (can be kept for a session summary)
+        user_messages = sum(1 for turn in self.conversation_history if turn["role"] == "user")
+        assistant_messages = sum(1 for turn in self.conversation_history if turn["role"] == "assistant")
+        vision_analyses = sum(1 for turn in self.conversation_history if turn["role"] == "action" and turn["content"].startswith("VISION:"))
+        # Corrected vision_analyses to count "action" with "VISION:"
+
+        print(f"[Embeddings] Overall conversation summary: {user_messages} user messages, {assistant_messages} assistant responses, {vision_analyses} vision actions.")
+        self._log("embeddings", f"Overall conversation summary: {user_messages} user messages, {assistant_messages} assistant responses, {vision_analyses} vision actions.")
+
+    def _action_rag_search(self, query: str):
+        """
+        Perform a RAG search using the given query and add results to conversation history.
+        """
+        self._log("action", f"RAG_SEARCH: {query}")
+        print(f"[Agent] Performing RAG search for query: '{query}'")
+
+        rag_results = self._get_rag_context(query) # Assuming top_k default is fine
+
+        if rag_results:
+            # Ensure results are formatted as a string, _get_rag_context might return a list or string
+            if isinstance(rag_results, list):
+                formatted_results = "\n".join(str(r) for r in rag_results)
+            else:
+                formatted_results = str(rag_results) # Ensure it's a string
+
+            rag_results_message = f"[Agent] RAG search results for query '{query}':\n{formatted_results}"
+        else:
+            rag_results_message = f"[Agent] No relevant context found by RAG search for query '{query}'."
+
+        print(rag_results_message)
+        self._log("assistant", rag_results_message)
+        self.conversation_history.append({"role": "assistant", "content": rag_results_message})
 
 
 if __name__ == "__main__":
