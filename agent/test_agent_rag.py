@@ -46,7 +46,8 @@ def main():
     
     print("\n=== Interactive Agent Testing ===")
     print("Type your messages to interact with the agent.")
-    print("The agent will perform RAG queries for each of your inputs.")
+    print("The agent will NO LONGER automatically perform RAG queries for each of your inputs.")
+    print("To test RAG, try asking the agent to search for specific information, e.g., 'search for details on ESR experiments'.")
     print("Type 'exit' or 'quit' to end the test.")
     
     while True:

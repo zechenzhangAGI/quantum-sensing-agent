@@ -209,44 +209,6 @@ In order to execute the script, you may use one of two cases. The first case is 
         """
         prompt = self.system_instruction.strip()
         
-        # Get the most recent user message for RAG query
-        recent_user_messages = [turn["content"] for turn in self.conversation_history 
-                               if turn["role"] == "user"]
-        
-        if recent_user_messages:
-            # Use the most recent user message as the query
-            query = recent_user_messages[-1]
-            
-            # RX 05142025
-            # Log that we're performing a RAG query
-            print(f"[RAG] Performing RAG query for: '{query[:50]}...' if len(query) > 50 else query")
-            
-            # Perform RAG search
-            relevant_contexts = self._get_rag_context(query)
-            
-            if relevant_contexts:
-                print(f"[RAG] Retrieved relevant context from previous conversations")
-                print(f"Retrieved context: {relevant_contexts}")
-                prompt += "\n\nRelevant context from previous conversations:\n"
-                prompt += relevant_contexts
-            else:
-                print("[RAG] No relevant context found in previous conversations")
-            
-            # Check for relevant plots
-            relevant_plots = self._get_relevant_plots(query)
-            if relevant_plots:
-                plot_filenames = [os.path.basename(p) for p in relevant_plots]
-                print(f"[RAG] Found relevant plots: {plot_filenames}")
-                self._log("rag", f"Relevant plots: {plot_filenames}")
-                
-                prompt += "\n\nRelevant plots that might help with this query:\n"
-                for plot_path in relevant_plots:
-                    plot_filename = os.path.basename(plot_path)
-                    prompt += f"- {plot_filename}\n"
-                prompt += "\nYou can analyze these plots using the 'vision' action if needed."
-            else:
-                print("[RAG] No relevant plots found")
-        
         # Add conversation history
         for turn in self.conversation_history:
             role = turn["role"]
