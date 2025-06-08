@@ -36,6 +36,7 @@ class NVExperimentAgent:
         # The entire conversation history (user messages, assistant messages, actions, etc.)
         self.conversation_history = []
         self.embedding_chunk_size = 10
+        self.embedding_chunk_overlap = 5 # New parameter for overlap
 
         # Extended system instruction with updated run command and vision option details
         self.system_instruction = (
@@ -71,7 +72,7 @@ In order to execute the script, you may use one of two cases. The first case is 
    - Read Access: Only from the `configs\\` or `data\\` directories.
    - Write Access: Only to the `configs\\` or `data\\` directories.
    - Run Access: Only scripts in the `scripts\\` directory.
-   - For `write`, `run`, or `vision` actions, always ask user permission first. If the user says “no,” do not proceed.
+   - For `write`, `run`, or `vision` actions, always ask user permission first. If the user says "no," do not proceed.
    
 4) Key File Paths & Self.base_dir:
    - All outputs, file paths, or results must be written to the directory {self.base_dir}.
@@ -611,7 +612,7 @@ In order to execute the script, you may use one of two cases. The first case is 
     def _get_rag_context(self, query, top_k=3):
         """
         Retrieve relevant context from previous conversations using RAG.
-        Highlight any plot references in the retrieved context.
+        This now searches across whole-chunk embeddings without re-chunking.
         
         Args:
             query: The user's query to search against
@@ -641,13 +642,14 @@ In order to execute the script, you may use one of two cases. The first case is 
         results = []
         for embedding_file in embeddings_files:
             try:
-                print(f"[RAG] Searching file: {os.path.basename(embedding_file)}")
-                similar_contexts = search_similar(query, embedding_file, top_k=top_k)
-                if similar_contexts:
-                    print(f"[RAG] Found {len(similar_contexts)} relevant contexts in {os.path.basename(embedding_file)}")
-                    results.extend(similar_contexts)
+                # search_similar now returns a single dict (or None) for the whole chunk
+                # and no longer takes top_k.
+                similar_context = search_similar(query, embedding_file)
+                if similar_context:
+                    print(f"[RAG] Searched file: {os.path.basename(embedding_file)}, Score: {similar_context['score']:.4f}")
+                    results.append(similar_context)
                 else:
-                    print(f"[RAG] No relevant contexts found in {os.path.basename(embedding_file)}")
+                    print(f"[RAG] No result or error for file: {os.path.basename(embedding_file)}")
             except Exception as e:
                 print(f"[RAG] Error searching embeddings file {embedding_file}: {str(e)}")
                 self._log("rag", f"Error searching embeddings file {embedding_file}: {str(e)}")
@@ -685,19 +687,30 @@ In order to execute the script, you may use one of two cases. The first case is 
     
     def save_conversation_embeddings(self):
         """
-        Embed the conversation history in chunks and save to the embeddings directory.
+        Embed the conversation history in overlapping chunks and save to the embeddings directory.
         Each chunk includes references to any plots analyzed within that chunk and all available plots.
         """
         if not self.conversation_history:
             print("[Embeddings] No conversation history to save")
             return
 
-        print(f"[Embeddings] Preparing to save conversation with {len(self.conversation_history)} turns in chunks of {self.embedding_chunk_size}.")
-        self._log("embeddings", f"Saving conversation with {len(self.conversation_history)} turns in chunks of {self.embedding_chunk_size}.")
+        # Ensure chunk size and overlap are valid
+        if self.embedding_chunk_size <= 0 or self.embedding_chunk_overlap < 0 or self.embedding_chunk_overlap >= self.embedding_chunk_size:
+            print(f"[Embeddings] Invalid chunk_size ({self.embedding_chunk_size}) or chunk_overlap ({self.embedding_chunk_overlap}). Skipping.")
+            return
+
+        step = self.embedding_chunk_size - self.embedding_chunk_overlap
+        print(f"[Embeddings] Preparing to save conversation with {len(self.conversation_history)} turns in overlapping chunks of size {self.embedding_chunk_size} with a step of {step}.")
+        self._log("embeddings", f"Saving conversation with {len(self.conversation_history)} turns in overlapping chunks of size {self.embedding_chunk_size}, step {step}.")
 
         chunk_index = 0
-        for i in range(0, len(self.conversation_history), self.embedding_chunk_size):
+        for i in range(0, len(self.conversation_history), step):
             chunk = self.conversation_history[i:i + self.embedding_chunk_size]
+            
+            # If the last chunk is smaller than the overlap, it's likely not useful and has been mostly covered.
+            if len(chunk) < self.embedding_chunk_overlap and i > 0:
+                continue
+            
             chunk_index += 1
             
             print(f"[Embeddings] Processing chunk {chunk_index} ({len(chunk)} turns)")
@@ -766,14 +779,30 @@ In order to execute the script, you may use one of two cases. The first case is 
         print(f"[Embeddings] Overall conversation summary: {user_messages} user messages, {assistant_messages} assistant responses, {vision_analyses} vision actions.")
         self._log("embeddings", f"Overall conversation summary: {user_messages} user messages, {assistant_messages} assistant responses, {vision_analyses} vision actions.")
 
+    def _get_recent_conversation_context(self, num_turns=8) -> str:
+        """Builds a context string from the most recent turns of the conversation."""
+        if num_turns <= 0:
+            return ""
+        
+        recent_turns = self.conversation_history[-num_turns:]
+        context_lines = [f"{turn['role']}: {turn['content']}" for turn in recent_turns]
+        return "\n".join(context_lines)
+
     def _action_rag_search(self, query: str):
         """
-        Perform a RAG search using the given query and add results to conversation history.
+        Perform a RAG search using the given query, augmented with recent conversation context.
         """
-        self._log("action", f"RAG_SEARCH: {query}")
-        print(f"[Agent] Performing RAG search for query: '{query}'")
+        self._log("action", f"RAG_SEARCH (raw query): {query}")
+        print(f"[Agent] Performing RAG search for raw query: '{query}'")
 
-        rag_results = self._get_rag_context(query) # Assuming top_k default is fine
+        # Add recent conversation context to the query for more robust search
+        recent_context = self._get_recent_conversation_context(num_turns=8)
+        contextualized_query = f"Based on the recent conversation below, find relevant information for the user's query.\n\n--- RECENT CONVERSATION ---\n{recent_context}\n\n--- USER QUERY ---\n{query}"
+        
+        self._log("action", f"RAG_SEARCH (contextualized query): {contextualized_query}")
+        print(f"[Agent] Contextualized query for RAG search: '{contextualized_query}'")
+
+        rag_results = self._get_rag_context(contextualized_query) # Use the new contextualized query
 
         if rag_results:
             # Ensure results are formatted as a string, _get_rag_context might return a list or string
