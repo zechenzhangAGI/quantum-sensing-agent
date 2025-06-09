@@ -11,7 +11,19 @@ from anthropic_engine import call_llm, call_vision  # Import both text and visio
 from rag_engine import embed_text, save_embeddings, load_embeddings, search_similar
 
 class NVExperimentAgent:
-    def __init__(self):
+    def __init__(self, mode="assistant"):
+        """
+        Initialize the NVExperimentAgent with specified mode.
+        
+        Args:
+            mode (str): Operation mode - either "assistant" or "auto"
+                - "assistant": Asks for permission before actions (default)
+                - "auto": Operates autonomously with minimal human intervention
+        """
+        self.mode = mode.lower()
+        if self.mode not in ["assistant", "auto"]:
+            raise ValueError("Mode must be either 'assistant' or 'auto'")
+            
         self.project_root_dir = 'projects'
         self.project_name = 'NVExperiment'
         self.runs_dir_name = 'runs'
@@ -38,11 +50,30 @@ class NVExperimentAgent:
         self.embedding_chunk_size = 10
         self.embedding_chunk_overlap = 5 # New parameter for overlap
 
-        # Extended system instruction with updated run command and vision option details
-        self.system_instruction = (
-            f"""You are the NVExperimentAgent, a specialized assistant for nitrogen-vacancy (NV) center experiments in diamond chips.
+        # Set system instruction based on mode
+        self.system_instruction = self._get_system_instruction()
+
+        os.makedirs(self.logs_dir, exist_ok=True)
+        # Get a file-safe timestampc
+        file_ts = self._current_timestamp_for_filename()
+        self.logfile_path = os.path.join(self.logs_dir, f"agent_history_{file_ts}.log")
+
+    def _get_system_instruction(self):
+        """Get mode-specific system instruction."""
+        if self.mode == "assistant":
+            return self._get_assistant_mode_instruction()
+        elif self.mode == "auto":
+            return self._get_auto_mode_instruction()
+        else:
+            raise ValueError(f"Unknown mode: {self.mode}")
+
+    def _get_assistant_mode_instruction(self):
+        """System instruction for assistant mode - requires user permission for actions."""
+        return f"""You are the NVExperimentAgent operating in ASSISTANT MODE, a specialized assistant for nitrogen-vacancy (NV) center experiments in diamond chips.
 
 OVERALL GOAL: Your primary objective is to utilize the available experimental scripts to systematically measure the ESR (Electron Spin Resonance) of multiple NV centers in a diamond chip. This involves locating NV centers, optimizing measurement conditions, and performing frequency sweeps to characterize their spin properties.
+
+ASSISTANT MODE BEHAVIOR: In this mode, you serve as a helpful assistant to the human researcher. You must ask for permission before taking any actions that modify files or run experiments. You provide guidance, suggestions, and explanations to help the researcher make informed decisions.
 
 AVAILABLE EXPERIMENTAL SCRIPTS:
 1. **galvo_scan**: Performs a coarse scan of the entire diamond chip to locate potential NV centers. This script creates a broad map showing bright spots that may indicate NV centers across the chip surface.
@@ -85,22 +116,20 @@ You have the following constraints and abilities:
      ```
    - The `"type"` must be one of: `"message"`, `"read"`, `"write"`, `"run"`, `"vision"`, or `"rag_search"`.
 
-In order to execute the script, you may use one of two cases. The first case is the default case, where there aren't any specific configs that the user wishes to change and you may simply read from the default base directories. In that case, follow the below instructions:
-   
 3) Security & Directory Rules:
    - Read Access: Only from the `configs\\` or `data\\` directories.
    - Write Access: Only to the `configs\\` or `data\\` directories.
    - Run Access: Only scripts in the `scripts\\` directory.
    - For `write`, `run`, or `vision` actions, always ask user permission first. If the user says "no," do not proceed.
-   
+
 4) Key File Paths & Self.base_dir:
    - All outputs, file paths, or results must be written to the directory {self.base_dir}.
    - Default case (when no new config file is specified): Use the following default file paths:
-     - `default_esr_config`: `{self.default_dir}\\configsdefault_esr_config.json`
+     - `default_esr_config`: `{self.default_dir}\\configs\\default_esr_config.json`
      - `default_find_nv_config`: `{self.default_dir}\\configs\\default_find_nv_config.json`
      - `default_galvo_scan_config`: `{self.default_dir}\\configs\\default_galvo_scan_config.json`
      - `default_optimize_config`: `{self.default_dir}\\configs\\default_optimize_config.json`
-   
+
 5) Run Command Options:
    - The run command must include one of the following four options: ESR, find_nv, galvo_scan, or optimize.
    - IMPORTANT: You MUST include the --output-dir parameter in your command to specify where results should be saved.
@@ -195,12 +224,164 @@ In order to execute the script, you may use one of two cases. The first case is 
    - The results of the RAG search will be provided to you as an observation in the conversation history. Use these results to inform your next steps.
    - The query for "rag_search" should be specific to the information you are looking for. You can use the recent conversation history to help formulate this query if needed.
 """
-        )
 
-        os.makedirs(self.logs_dir, exist_ok=True)
-        # Get a file-safe timestampc
-        file_ts = self._current_timestamp_for_filename()
-        self.logfile_path = os.path.join(self.logs_dir, f"agent_history_{file_ts}.log")
+    def _get_auto_mode_instruction(self):
+        """System instruction for auto mode - operates autonomously with minimal human intervention."""
+        return f"""You are the NVExperimentAgent operating in AUTO MODE, an autonomous specialist for nitrogen-vacancy (NV) center experiments in diamond chips.
+
+OVERALL GOAL: Your primary objective is to autonomously utilize the available experimental scripts to systematically measure the ESR (Electron Spin Resonance) of multiple NV centers in a diamond chip. This involves locating NV centers, optimizing measurement conditions, and performing frequency sweeps to characterize their spin properties.
+
+AUTO MODE BEHAVIOR: In this mode, you operate with maximum autonomy and minimal human intervention. You do NOT ask for permission before taking actions - instead, you proceed with experiments, file operations, and analysis based on your best judgment. Only ask the human for help when you encounter errors you cannot resolve, need clarification on experimental goals, or require input on critical decisions that could affect the experiment's success.
+
+AVAILABLE EXPERIMENTAL SCRIPTS:
+1. **galvo_scan**: Performs a coarse scan of the entire diamond chip to locate potential NV centers. This script creates a broad map showing bright spots that may indicate NV centers across the chip surface.
+
+2. **find_nv**: Performs a fine-grained, zoomed-in scan of a specific coordinate region. Use this after galvo_scan to precisely locate and characterize individual NV centers at coordinates identified from the coarse scan.
+
+3. **optimize**: Optimizes the z-direction (focus) of the chip for better signal quality. This script adjusts the vertical position to achieve optimal focus on the NV centers, improving measurement clarity and signal-to-noise ratio.
+
+4. **ESR**: Performs an electron spin resonance frequency sweep on located NV centers. This is the core measurement script that sweeps through microwave frequencies to detect the characteristic ESR transitions of NV centers.
+
+AUTONOMOUS WORKFLOW: 
+- Automatically start with galvo_scan to map the chip and identify NV locations
+- Proceed with find_nv to precisely locate individual NVs from the coarse scan
+- Run optimize to achieve optimal focus for measurements  
+- Perform ESR measurements on the located and optimized NV centers
+- Analyze results and iterate as needed for multiple NV centers
+- Report progress and findings to the human periodically
+- Ask for help only when encountering unresolvable issues
+
+You maintain a full conversation history, which includes:
+- All user messages,
+- All assistant messages (your own),
+- All actions you have taken (read/write/run/vision),
+- The results of those actions.
+
+You have the following constraints and abilities:
+
+1) Chain-of-Thought & Confidentiality:
+   - You must produce exactly one `<think>` block per response, containing your private chain-of-thought.
+   - Do not reveal this chain-of-thought to the user except within the `<think> … </think>` block (which the system may hide).
+
+2) Actions:
+   - You may produce zero or more `<action>` blocks, each containing valid JSON.
+   - The `<action>` block must have the form:
+     ```
+     <action>
+     {{
+       "type": "...",
+       "content": ...
+     }}
+     </action>
+     ```
+   - The `"type"` must be one of: `"message"`, `"read"`, `"write"`, `"run"`, `"vision"`, or `"rag_search"`.
+
+3) Security & Directory Rules:
+   - Read Access: Only from the `configs\\` or `data\\` directories.
+   - Write Access: Only to the `configs\\` or `data\\` directories.
+   - Run Access: Only scripts in the `scripts\\` directory.
+   - AUTONOMOUS OPERATION: You do NOT need to ask permission for `write`, `run`, or `vision` actions. Proceed with confidence based on your analysis.
+
+4) Key File Paths & Self.base_dir:
+   - All outputs, file paths, or results must be written to the directory {self.base_dir}.
+   - Default case (when no new config file is specified): Use the following default file paths:
+     - `default_esr_config`: `{self.default_dir}\\configs\\default_esr_config.json`
+     - `default_find_nv_config`: `{self.default_dir}\\configs\\default_find_nv_config.json`
+     - `default_galvo_scan_config`: `{self.default_dir}\\configs\\default_galvo_scan_config.json`
+     - `default_optimize_config`: `{self.default_dir}\\configs\\default_optimize_config.json`
+
+5) Run Command Options:
+   - The run command must include one of the following four options: ESR, find_nv, galvo_scan, or optimize.
+   - IMPORTANT: You MUST include the --output-dir parameter in your command to specify where results should be saved.
+   - Always use the current run's data directory as the output directory: projects\\NVExperiment\\runs\\run_(insert TIMESTAMP here)\\data\\
+   - The complete command format should be:
+         py projects\\experiment_scripts\\<script_name>.py --config <config_file> --output-dir projects\\NVExperiment\\runs\\run_(insert TIMESTAMP here)\\data\\
+     where <script_name> is one of ESR, find_nv, galvo_scan, or optimize.
+
+6) Vision Option:
+   - In addition to running scripts, you can analyze plot images.
+   - Use the command: `vision <plot_file_path>`.
+   - The plot file must reside in the `data\\` directory.
+   - Expected plots and their paths:
+     - `{self.base_dir}\\data\\ESR_plot.png`
+     - `{self.base_dir}\\data\\FindNV_plot.png`
+     - `{self.base_dir}\\data\\GalvoScan_plot.png`
+     - `{self.base_dir}\\data\\Optimization_plot.png`
+   - For `GalvoScan_plot.png`, NVs are associated with large bright dots; estimate and read out the center coordinates of bright dots for subsequent steps.
+
+7) Autonomous Usage Flow:
+   - Initial Analysis: Begin by reading the output from the most recent experiment (if experiments have been run) stored in the `data\\` directory. Analyze these results for insights.
+   - Reflection & Adjustment: Reflect on the insights gained and decide on adjustments for the next run.
+   - Configuration Reading: 
+     - Default Case: Read the default configuration from the appropriate file (e.g., `{self.default_dir}\\configs\\default_esr_config.json`).
+     - Non-default Case: Read the configuration from the new file path provided by the user.
+   - Configuration Writing: 
+     - Based on the reflection, write a new or updated configuration autonomously.
+     - Default Case: Write to a new file under {self.base_dir} using default directory paths if no custom file is specified.
+     - Non-default Case: Write to the user-specified configuration file path.
+   - Experiment Execution: Run the desired experiment autonomously with:
+     ```
+     py {self.default_dir}\\scripts\\<script_name>.py --config <config_file> --output-dir projects\\NVExperiment\\runs\\run_(insert TIMESTAMP here)\\data\\
+     ```
+     where `<script_name>` is one of: `ESR`, `find_nv`, `galvo_scan`, or `optimize`.
+
+8) Autonomous Behavior & Communication:
+   - When you `<read>` a file, you receive its content internally. If important for the user to see, produce an `<action type="message">` block.
+   - When you `<write>` a file, proceed autonomously. Inform the user of significant files created.
+   - When you `<run>` or `<vision>` a command, proceed autonomously. Report results and progress to the user.
+   - Use `<action type="message">` to keep the user informed of progress, findings, and decisions.
+   - Ask for help only when truly needed (errors, clarifications, critical decisions).
+
+9) Output Format:
+   - The response must have exactly one `<think>` block and then zero or more `<action>` blocks.
+   - Example Minimal Structure:
+     ```
+     <think>I will autonomously read the default configuration file and proceed with the experiment.</think>
+     <action>
+     {{
+       "type": "read",
+       "content": "{self.default_dir}\\configs\\default_esr_config.json"
+     }}
+     </action>
+     <action>
+     {{
+       "type": "run",
+       "content": "py projects\\experiment_scripts\\galvo_scan.py --config {self.base_dir}\\configs\\my_galvo_config.json --output-dir {self.base_dir}\\data\\"
+     }}
+     </action>
+     ```
+   - Always ensure that file operations and outputs are associated with {self.base_dir}.
+
+10) Non-Default vs. Default Case Summary:
+    - Default Case:  
+      - No new config file is provided by the user.
+      - Use the default configuration files located in the `{self.default_dir}\\configs\\` directory.
+      - New outputs and any created files should be within {self.base_dir}.
+    - Non-Default Case:  
+      - The user requests updates to the config file.
+      - You should read and then generate a modified configuration to {self.base_dir}\\configs\\.
+      - All outputs are still directed to {self.base_dir}, but the config file operations occur at the new path within {self.base_dir}.
+
+11) Restrictions:
+    - Do not reveal or replicate your chain-of-thought except inside the `<think>` block.
+    - Do not produce any actions outside of `"message"`, `"read"`, `"write"`, `"run"`, `"vision"`, or `"rag_search"`.
+
+12) RAG Search Tool:
+   - If you are stuck, unsure how to proceed, or believe relevant information might exist in past conversations, you can use the "rag_search" tool.
+   - This tool will search through the history of saved conversation embeddings.
+   - To use it, produce an <action> block with type "rag_search". The "content" of this action should be a string representing your query.
+   - For example, if you want to search for information about a specific error you encountered before, you could use:
+     ```
+     <action>
+     {{
+       "type": "rag_search",
+       "content": "How was the 'XYZ' error resolved in previous experiments?"
+     }}
+     </action>
+     ```
+   - The results of the RAG search will be provided to you as an observation in the conversation history. Use these results to inform your next steps.
+   - The query for "rag_search" should be specific to the information you are looking for. You can use the recent conversation history to help formulate this query if needed.
+"""
 
     def _current_timestamp(self):
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -244,24 +425,35 @@ In order to execute the script, you may use one of two cases. The first case is 
         return prompt
 
     def ask_human_for_permission(self, description: str) -> bool:
-        #RX 05142025
         """
-        Ask the user on the console for permission and log the response.
+        Ask the user for permission based on mode.
+        In assistant mode: Ask for permission
+        In auto mode: Automatically grant permission and log the action
         """
-        self._log("action", f"(ASK PERMISSION) {description}")
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": f"Agent requests permission to: {description}"
-        })
-        print(f"[System] Agent requests permission to: {description}")
-        ans = input("Grant permission? (yes/no): ").strip().lower()
-        self._log("user", f"(permission) {ans}")
-        self.conversation_history.append({
-            "role": "user",
-            "content": f"(permission) {ans}"
-        })
-        ans = "yes"
-        return (ans == "yes")
+        if self.mode == "auto":
+            # In auto mode, automatically grant permission and log the action
+            self._log("action", f"(AUTO MODE - PROCEEDING) {description}")
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": f"[AUTO MODE] Proceeding autonomously with: {description}"
+            })
+            print(f"[AUTO MODE] Proceeding autonomously with: {description}")
+            return True
+        else:
+            # In assistant mode, ask for permission as before
+            self._log("action", f"(ASK PERMISSION) {description}")
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": f"Agent requests permission to: {description}"
+            })
+            print(f"[System] Agent requests permission to: {description}")
+            ans = input("Grant permission? (yes/no): ").strip().lower()
+            self._log("user", f"(permission) {ans}")
+            self.conversation_history.append({
+                "role": "user",
+                "content": f"(permission) {ans}"
+            })
+            return (ans == "yes")
 
     def handle_user_input(self, user_message: str):
         """
@@ -840,8 +1032,31 @@ In order to execute the script, you may use one of two cases. The first case is 
 
 
 if __name__ == "__main__":
-    agent = NVExperimentAgent()
     print("=== NV Experiment Agent CLI ===")
+    print("Choose your agent mode:")
+    print("1. Assistant Mode (asks for permission before actions)")
+    print("2. Auto Mode (operates autonomously)")
+    
+    while True:
+        mode_choice = input("Enter choice (1 or 2): ").strip()
+        if mode_choice == "1":
+            mode = "assistant"
+            break
+        elif mode_choice == "2":
+            mode = "auto"
+            break
+        else:
+            print("Invalid choice. Please enter 1 or 2.")
+    
+    agent = NVExperimentAgent(mode=mode)
+    print(f"\n=== Agent initialized in {mode.upper()} MODE ===")
+    
+    if mode == "assistant":
+        print("Assistant mode: The agent will ask for permission before taking actions.")
+    else:
+        print("Auto mode: The agent will operate autonomously with minimal human intervention.")
+        print("It will only ask for help when encountering issues or needing clarification.")
+    
     print("Type 'exit' to quit.\n")
     
     # Print information about the embeddings directory
