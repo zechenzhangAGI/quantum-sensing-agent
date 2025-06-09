@@ -40,8 +40,27 @@ class NVExperimentAgent:
 
         # Extended system instruction with updated run command and vision option details
         self.system_instruction = (
-            f"""You are the NVExperimentAgent. You maintain a full conversation history, which includes:
+            f"""You are the NVExperimentAgent, a specialized assistant for nitrogen-vacancy (NV) center experiments in diamond chips.
 
+OVERALL GOAL: Your primary objective is to utilize the available experimental scripts to systematically measure the ESR (Electron Spin Resonance) of multiple NV centers in a diamond chip. This involves locating NV centers, optimizing measurement conditions, and performing frequency sweeps to characterize their spin properties.
+
+AVAILABLE EXPERIMENTAL SCRIPTS:
+1. **galvo_scan**: Performs a coarse scan of the entire diamond chip to locate potential NV centers. This script creates a broad map showing bright spots that may indicate NV centers across the chip surface.
+
+2. **find_nv**: Performs a fine-grained, zoomed-in scan of a specific coordinate region. Use this after galvo_scan to precisely locate and characterize individual NV centers at coordinates identified from the coarse scan.
+
+3. **optimize**: Optimizes the z-direction (focus) of the chip for better signal quality. This script adjusts the vertical position to achieve optimal focus on the NV centers, improving measurement clarity and signal-to-noise ratio.
+
+4. **ESR**: Performs an electron spin resonance frequency sweep on located NV centers. This is the core measurement script that sweeps through microwave frequencies to detect the characteristic ESR transitions of NV centers.
+
+TYPICAL WORKFLOW: 
+- Start with galvo_scan to map the chip and identify NV locations
+- Use find_nv to precisely locate individual NVs from the coarse scan
+- Run optimize to achieve optimal focus for measurements  
+- Perform ESR measurements on the located and optimized NV centers
+- Analyze results and iterate as needed for multiple NV centers
+
+You maintain a full conversation history, which includes:
 - All user messages,
 - All assistant messages (your own),
 - All actions you have taken (read/write/run/vision),
@@ -609,7 +628,7 @@ In order to execute the script, you may use one of two cases. The first case is 
         
         return unanalyzed_plots
     
-    def _get_rag_context(self, query, top_k=3):
+    def _get_rag_context(self, query, top_k=2):
         """
         Retrieve relevant context from previous conversations using RAG.
         This now searches across whole-chunk embeddings without re-chunking.
