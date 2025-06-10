@@ -39,7 +39,7 @@ class NVExperimentAgent:
         self.data_dir   = os.path.join(self.base_dir, "data")
         self.logs_dir   = os.path.join(self.base_dir, "logs")
 
-        self.scripts_dir = "experiment_scripts"  # updated directory for scripts
+        self.scripts_dir = os.path.join(self.default_dir, "scripts")  # experiment scripts directory
         
         # Directory for storing embeddings
         self.embeddings_dir = os.path.join(self.project_root_dir, self.project_name, "embeddings")
@@ -132,7 +132,7 @@ You have the following constraints and abilities:
    - Read Access: Only from the `configs\\` or `data\\` directories.
    - Write Access: Only to the `configs\\` or `data\\` directories.
    - Run Access: Only scripts in the `scripts\\` directory.
-   - For `write`, `run`, or `vision` actions, always ask user permission first. If the user says "no," do not proceed.
+        - For `write`, `run`, or `vision` actions, always ask user permission first. If the user says "no," do not proceed.
 
 4) Key File Paths & Self.base_dir:
    - All outputs, file paths, or results must be written to the directory {self.base_dir}.
@@ -147,7 +147,7 @@ You have the following constraints and abilities:
    - IMPORTANT: You MUST include the --output-dir parameter in your command to specify where results should be saved.
    - Always use the current run's data directory as the output directory: projects\\NVExperiment\\runs\\run_(insert TIMESTAMP here)\\data\\
    - The complete command format should be:
-         py projects\\experiment_scripts\\<script_name>.py --config <config_file> --output-dir projects\\NVExperiment\\runs\\run_(insert TIMESTAMP here)\\data\\
+         py {self.scripts_dir}\\<script_name>.py --config <config_file> --output-dir projects\\NVExperiment\\runs\\run_(insert TIMESTAMP here)\\data\\
      where <script_name> is one of ESR, find_nv, galvo_scan, or optimize.
 
 6) Vision Option:
@@ -313,7 +313,7 @@ You have the following constraints and abilities:
    - IMPORTANT: You MUST include the --output-dir parameter in your command to specify where results should be saved.
    - Always use the current run's data directory as the output directory: projects\\NVExperiment\\runs\\run_(insert TIMESTAMP here)\\data\\
    - The complete command format should be:
-         py projects\\experiment_scripts\\<script_name>.py --config <config_file> --output-dir projects\\NVExperiment\\runs\\run_(insert TIMESTAMP here)\\data\\
+         py {self.scripts_dir}\\<script_name>.py --config <config_file> --output-dir projects\\NVExperiment\\runs\\run_(insert TIMESTAMP here)\\data\\
      where <script_name> is one of ESR, find_nv, galvo_scan, or optimize.
 
 6) Vision Option:
@@ -365,7 +365,7 @@ You have the following constraints and abilities:
      <action>
      {{
        "type": "run",
-       "content": "py projects\\experiment_scripts\\galvo_scan.py --config {self.base_dir}\\configs\\my_galvo_config.json --output-dir {self.base_dir}\\data\\"
+       "content": "py {self.scripts_dir}\\galvo_scan.py --config {self.base_dir}\\configs\\my_galvo_config.json --output-dir {self.base_dir}\\data\\"
      }}
      </action>
      ```
@@ -632,11 +632,12 @@ You have the following constraints and abilities:
         """
         Parse the run command to extract the script and config file.
         Expected format:
-            py experiment_scripts\\<script_name>.py --config <config_file> [--output-dir <output_directory>]
+            py {self.scripts_dir}\\<script_name>.py --config <config_file> [--output-dir <output_directory>]
         where <script_name> is one of ESR, find_nv, galvo_scan, or optimize.
         """
         # More flexible pattern to handle different path formats and whitespace variations
-        pattern = r"py\s+(?P<path>(?:projects[\\/])?(?:experiment_scripts|NVExperiment[\\/]scripts)[\\/](ESR\.py|find_nv\.py|galvo_scan\.py|optimize\.py))\s+--config\s+(?P<config>[\w\\./-]+)(?:\s+--output-dir\s+(?P<output_dir>[\w\\./-]+))?"
+        # Accept: experiment_scripts, projects/experiment_scripts, projects/NVExperiment/scripts, or {self.scripts_dir}
+        pattern = r"py\s+(?P<path>(?:projects[\\/])?(?:experiment_scripts|NVExperiment[\\/]scripts|[^\\\/\s]+[\\/]NVExperiment[\\/]scripts)[\\/](ESR\.py|find_nv\.py|galvo_scan\.py|optimize\.py))\s+--config\s+(?P<config>[\w\\./-]+)(?:\s+--output-dir\s+(?P<output_dir>[\w\\./-]+))?"
         m = re.search(pattern, command)
         if m:
             result = {"script": m.group("path"), "config": m.group("config")}
@@ -646,7 +647,7 @@ You have the following constraints and abilities:
         else:
             # More informative error message that includes the command that failed to parse
             allowed_scripts = "ESR.py, find_nv.py, galvo_scan.py, or optimize.py"
-            error_msg = f"Run command parsing error for command: '{command}'. \nCommand must be in the format: py experiment_scripts/<script_name>.py --config <config_file> [--output-dir <output_directory>] \nwhere <script_name> is one of {allowed_scripts}"
+            error_msg = f"Run command parsing error for command: '{command}'. \nCommand must be in the format: py {self.scripts_dir}/<script_name>.py --config <config_file> [--output-dir <output_directory>] \nwhere <script_name> is one of {allowed_scripts}"
             raise ValueError(error_msg)
 
 
