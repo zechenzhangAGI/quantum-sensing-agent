@@ -50,3 +50,15 @@ ReAct prompting? -- could be good to daisy-chain together data, especially with 
 
   Note: The agent.py file is written for the final environment on windows that controls the actual experiments. You can create a mock test environment which might be the agent_mac.py file (but you have to tweek it along) to test the implemented functionalities. also read the test scripts for reference.  
 
+#TODO --June 9
+1. Fix the system prompt regarding the default and non-default case (basically right now prompt 7 and 10 for both the auto and assistant mode is weridly written. Esentially I just want to convey the concept that there are default config files for each experiment script and the agent has refer to them when setting up the experiment; however they don't have to be used but can be edited each time for experiment )
+2. Describe each script's input and output more clearly for both auto and assistant mode. sometimes the fit in the plot is just a Gaussian fit algorithm and may not necessarily reflect the signal found. I have described them more carefully below feel free to make them more clear 
+
+Galvoscan presents the brightness of the sample(unit:kilo counts per second kcps) at each confocal point. 
+FindNV is the zoomed-in GalvoScan. The the red label of find NV is the result of a 2D Gaussian fit that tries to find local maximum. 
+Optimization is the1D scan of X/Y/Z in order to optimize counts, and the red label of optimized location is the peak of 1D Gaussian fit.
+ESR measures the fluorescent response of microwave drive. ESR fit is the 1D Gaussian fit of local minima. 
+
+
+3. Describe RAG search more clearly to the agent, basically it wants to use it whenever it feels that learning from past history is helpful for the current experiment. 
+4. Generally look at the system prompts again and see if they are logical,concise, coherent and clear.

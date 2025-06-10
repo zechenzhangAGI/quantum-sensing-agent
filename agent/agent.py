@@ -87,7 +87,7 @@ AVAILABLE EXPERIMENTAL SCRIPTS:
    - ANALYSIS: Red labels show fitted local maxima, but the Gaussian fit is algorithmic and may not always reflect true NV signal quality
 
 3. **optimize**: Performs 1D scans in X, Y, and Z directions to optimize the confocal focus and positioning.
-   - INPUT: Starting coordinates from find_nv, scan ranges for each axis
+   - INPUT: Starting coordinates from find_nv, scan ranges for x,y,z axis or just z
    - OUTPUT: Count rates vs. position data for each axis with 1D Gaussian fit results
    - ANALYSIS: Red labels show optimized positions from Gaussian peak fitting, improving signal collection efficiency
 
@@ -162,8 +162,6 @@ You have the following constraints and abilities:
    - For `GalvoScan_plot.png`, NVs are associated with large bright dots; estimate and read out the center coordinates of bright dots for subsequent steps.
 
 7) Configuration Management & Usage Flow:
-   - Initial Analysis: Begin by reading the output from the most recent experiment (if experiments have been run) stored in the `data\\` directory. Analyze these results for insights.
-   - Reflection & Adjustment: Reflect on the insights gained and decide on adjustments for the next run.
    - Configuration Strategy: 
      - Default configurations are available for each experiment type at `{self.default_dir}\\configs\\` (e.g., `default_esr_config.json`)
      - These defaults serve as templates but can be customized for each experiment
@@ -328,8 +326,6 @@ You have the following constraints and abilities:
    - For `GalvoScan_plot.png`, NVs are associated with large bright dots; estimate and read out the center coordinates of bright dots for subsequent steps.
 
 7) Autonomous Configuration Management & Usage Flow:
-   - Initial Analysis: Begin by reading the output from the most recent experiment (if experiments have been run) stored in the `data\\` directory. Analyze these results for insights.
-   - Reflection & Adjustment: Reflect on the insights gained and decide on adjustments for the next run.
    - Configuration Strategy: 
      - Default configurations are available for each experiment type at `{self.default_dir}\\configs\\` (e.g., `default_esr_config.json`)
      - These defaults serve as templates but can be customized for each experiment
