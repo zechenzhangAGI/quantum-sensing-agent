@@ -76,9 +76,8 @@ def main():
     # Save galvo_scan.data as a JSON with proper numpy array handling
     outjson = os.path.join(data_dir, f"galvo_scan_data_{timestamp}.json")
     with open(outjson, "w") as f:
-        json.dump(galvo_scan.data, f, indent=4)
+        json.dump(galvo_scan.data, f, default=numpy_to_python)
     print(f"[Runner] Saved GalvoScan data to: {outjson}")
-
 
 if __name__ == "__main__":
     main()

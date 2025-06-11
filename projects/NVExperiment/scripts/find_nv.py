@@ -5,9 +5,24 @@ import importlib.util
 import matplotlib.pyplot as plt
 import argparse
 from datetime import datetime
+import numpy as np
 sys.path.append(r"C:\\Users\\NVAFM_6th_fl_2\\NV-Automation\\b26_toolkit_for_agent\\b26_toolkit-master")
 from pylabcontrol.core import Script
 from b26_toolkit.scripts.find_nv import FindNV
+
+def numpy_to_python(obj):
+    """Convert nested dictionary with numpy arrays to Python native types."""
+    if isinstance(obj, dict):
+        return {k: numpy_to_python(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [numpy_to_python(item) for item in obj]
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, (np.integer, np.floating, np.bool_)):
+        return obj.item()
+    elif isinstance(obj, datetime):
+        return obj.strftime("%Y-%m-%d %H:%M:%S")
+    return obj
 
 def main():
     """
@@ -69,7 +84,7 @@ def main():
     #8. Save FindNV data as a JSON with proper numpy array handling
     outjson = os.path.join(data_dir, f"FindNV_data_{timestamp}.json")
     with open(outjson, "w") as f:
-        json.dump(Find_nv.data, f, indent=4)  # Convert numpy arrays to lists
+        json.dump(Find_nv.data, f, default=numpy_to_python)  # Convert numpy arrays to lists
     print(f"[Runner] Saved FindNV data to: {outjson}")
 
 if __name__ == "__main__":
