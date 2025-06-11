@@ -12,7 +12,7 @@ from b26_toolkit.scripts.find_nv import FindNV
 def main():
     """
     Usage:
-      py find_nv.py --config configs/findnv_experiment_YYYY-MM-DD.json [--output-dir path/to/output/directory]
+      py find_nv.py --config configs/find_nv_experiment_YYYY-MM-DD.json [--output-dir path/to/output/directory]
     """
     # 1. Parse command-line args
     parser = argparse.ArgumentParser(description='Run FindNV experiment')
@@ -66,11 +66,10 @@ def main():
     fig.savefig(outpath, dpi=150)
     print(f"[Runner] Saved FindNV plot to: {outpath}")
 
-    #8. Optionally, also save esr.data as a JSON or pickle if you wish
-    #   e.g.:
+    #8. Save FindNV data as a JSON with proper numpy array handling
     outjson = os.path.join(data_dir, f"FindNV_data_{timestamp}.json")
     with open(outjson, "w") as f:
-        json.dump(Find_nv.data, f, indent=2, default=str)  # default=str for numpy conversions
+        json.dump(Find_nv.data, f, indent=4)  # Convert numpy arrays to lists
     print(f"[Runner] Saved FindNV data to: {outjson}")
 
 if __name__ == "__main__":

@@ -8,6 +8,8 @@ from datetime import datetime
 sys.path.append(r'C:\Users\NVAFM_6th_fl_2\NV-Automation\b26_toolkit_for_agent\b26_toolkit-master')
 from pylabcontrol.core import Script
 from b26_toolkit.scripts.esr_RnS import ESR_RnS
+
+
 def main():
     """
     Usage:
@@ -61,11 +63,10 @@ def main():
     fig.savefig(outpath, dpi=150)
     print(f"[Runner] Saved ESR plot to: {outpath}")
 
-    #8. Optionally, also save esr.data as a JSON or pickle if you wish
-    #   e.g.:
+    #8. Save esr.data as a JSON with proper numpy array handling
     outjson = os.path.join(data_dir, f"esr_data_{timestamp}.json")
     with open(outjson, "w") as f:
-        json.dump(esr.data, f, indent=2, default=str)  # default=str for numpy conversions
+        json.dump(esr.data, f, indent=4)# Convert numpy arrays to lists
     print(f"[Runner] Saved ESR data to: {outjson}")
 
 if __name__ == "__main__":
