@@ -116,7 +116,7 @@ You have the following constraints and abilities:
    - Do not reveal this chain-of-thought to the user except within the `<think> … </think>` block (which the system may hide).
 
 2) Actions:
-   - You may produce zero or more `<action>` blocks, each containing valid JSON.
+   - **IMPORTANT: You may produce exactly ONE `<action>` block per response** (one action per turn)
    - The `<action>` block must have the form:
      ```
      <action>
@@ -226,6 +226,7 @@ You have the following constraints and abilities:
      - "What parameter adjustments improved ESR signal quality in past experiments?"
      - "What coordinates were successful for NV center measurements?"
    - The search results will provide relevant context from past conversations to inform your current decisions
+   - **Historical Plot Analysis**: When RAG search returns references to historical plots (e.g., "GalvoScan_plot.png from run_20240615_143022"), you can analyze those plots using vision action with the full historical path
    - RAG search is particularly useful when planning experimental parameters, troubleshooting issues, or building on previous successes
 """
 
@@ -235,7 +236,13 @@ You have the following constraints and abilities:
 
 OVERALL GOAL: Your primary objective is to autonomously utilize the available experimental scripts to systematically measure the ESR (Electron Spin Resonance) of multiple NV centers in a diamond chip. This involves locating NV centers, optimizing measurement conditions, and performing frequency sweeps to characterize their spin properties.
 
-AUTO MODE BEHAVIOR: In this mode, you operate with maximum autonomy and minimal human intervention. You do NOT ask for permission before taking actions - instead, you proceed with experiments, file operations, and analysis based on your best judgment. Only ask the human for help when you encounter errors you cannot resolve, need clarification on experimental goals, or require input on critical decisions that could affect the experiment's success.
+AUTO MODE BEHAVIOR: 
+- You operate with maximum autonomy and minimal human intervention
+- You do NOT ask for permission before taking actions - proceed with experiments, file operations, and analysis based on your best judgment
+- **IMPORTANT: You may produce exactly ONE action per response** (one action per turn)
+- Feel free to use "message" actions to ask the human for advice when writing configs, analyzing experiment results, or making experimental decisions
+- Only when you send a "message" action will the system pause for human input; all other actions will automatically continue to the next step
+- After completing experiments or analyzing results, consider using RAG search to learn from past experience before planning next steps
 
 AVAILABLE EXPERIMENTAL SCRIPTS:
 1. **galvo_scan**: Performs a coarse scan of the entire diamond chip to locate potential NV centers.
@@ -280,7 +287,7 @@ You have the following constraints and abilities:
    - Do not reveal this chain-of-thought to the user except within the `<think> … </think>` block (which the system may hide).
 
 2) Actions:
-   - You may produce zero or more `<action>` blocks, each containing valid JSON.
+   - **IMPORTANT: You may produce exactly ONE `<action>` block per response** (one action per turn)
    - The `<action>` block must have the form:
      ```
      <action>
@@ -348,7 +355,7 @@ You have the following constraints and abilities:
    - Ask for help only when truly needed (errors, clarifications, critical decisions).
 
 9) Output Format:
-   - The response must have exactly one `<think>` block and then zero or more `<action>` blocks.
+   - The response must have exactly one `<think>` block and exactly **ONE** `<action>` block.
    - Example Minimal Structure:
      ```
      <think>I will autonomously read the default configuration file and proceed with the experiment.</think>
@@ -356,12 +363,6 @@ You have the following constraints and abilities:
      {{
        "type": "read",
        "content": "{self.default_dir}\\configs\\default_esr_config.json"
-     }}
-     </action>
-     <action>
-     {{
-       "type": "run",
-       "content": "py {self.scripts_dir}\\galvo_scan.py --config {self.base_dir}\\configs\\my_galvo_config.json --output-dir {self.base_dir}\\data\\"
      }}
      </action>
      ```
@@ -388,6 +389,7 @@ You have the following constraints and abilities:
      - "What parameter adjustments improved ESR signal quality in past experiments?"
      - "What coordinates were successful for NV center measurements?"
    - The search results will provide relevant context from past conversations to inform your current decisions
+   - **Historical Plot Analysis**: When RAG search returns references to historical plots (e.g., "GalvoScan_plot.png from run_20240615_143022"), you can analyze those plots using vision action with the full historical path
    - RAG search is particularly useful when planning experimental parameters, troubleshooting issues, or building on previous successes
 """
 
@@ -490,56 +492,141 @@ You have the following constraints and abilities:
             self.conversation_history.append({"role": "assistant", "content": f"(THINK) {chain_of_thought}"})
 
         actions = self._parse_actions(llm_response)
+        
+        # Enforce one action per turn
+        if len(actions) > 1:
+            print(f"[System] Agent attempted {len(actions)} actions. Enforcing one action per turn - using first action only.")
+            actions = actions[:1]
+        elif len(actions) == 0:
+            print("[System] No actions found in agent response.")
+            return
 
-        for action_dict in actions:
-            a_type = action_dict.get("type", "").lower()
-            content = action_dict.get("content", "")
+        # Execute single action
+        action_dict = actions[0]
+        a_type = action_dict.get("type", "").lower()
+        content = action_dict.get("content", "")
 
-            if a_type == "message":
-                self._action_message(content)
-            elif a_type == "read":
-                self._action_read_file(content)
-            elif a_type == "write":
-                if self.ask_human_for_permission(f"Write file: {content}"):
-                    self._action_write_file(content)
-                else:
-                    print("[System] Write denied by user.")
-                    self._log("action", f"WRITE DENIED for {content}")
-                    self.conversation_history.append({
-                        "role": "assistant",
-                        "content": f"[Agent] WRITE DENIED for {content}"
-                    })
-            elif a_type == "run":
-                if self.ask_human_for_permission(f"Run command: {content}"):
-                    self._action_run_command(content)
-                else:
-                    print("[System] Run denied by user.")
-                    self._log("action", f"RUN DENIED for {content}")
-                    self.conversation_history.append({
-                        "role": "assistant",
-                        "content": f"[Agent] RUN DENIED for {content}"
-                    })
-            elif a_type == "vision":
-                if self.ask_human_for_permission(f"Analyze plot: {content}"):
-                    self._action_vision(content)
-                else:
-                    print("[System] Vision analysis denied by user.")
-                    self._log("action", f"VISION DENIED for {content}")
-                    self.conversation_history.append({
-                        "role": "assistant",
-                        "content": f"[Agent] VISION DENIED for {content}"
-                    })
-            elif a_type == "rag_search":
-                # For RAG search, we don't typically need explicit human permission
-                # as it's an internal information retrieval tool.
-                self._action_rag_search(content)
+        if a_type == "message":
+            self._action_message(content)
+        elif a_type == "read":
+            self._action_read_file(content)
+            # In auto mode, continue automatically after non-message actions
+            if self.mode == "auto":
+                self._auto_continue()
+        elif a_type == "write":
+            if self.ask_human_for_permission(f"Write file: {content}"):
+                self._action_write_file(content)
+                if self.mode == "auto":
+                    self._auto_continue()
             else:
-                print(f"[System] Unknown action type: {a_type}")
-                self._log("action", f"Unknown action {a_type}")
+                print("[System] Write denied by user.")
+                self._log("action", f"WRITE DENIED for {content}")
                 self.conversation_history.append({
                     "role": "assistant",
-                    "content": f"[Agent] Unknown action {a_type}"
+                    "content": f"[Agent] WRITE DENIED for {content}"
                 })
+        elif a_type == "run":
+            if self.ask_human_for_permission(f"Run command: {content}"):
+                self._action_run_command(content)
+                if self.mode == "auto":
+                    self._auto_continue()
+            else:
+                print("[System] Run denied by user.")
+                self._log("action", f"RUN DENIED for {content}")
+                self.conversation_history.append({
+                    "role": "assistant",
+                    "content": f"[Agent] RUN DENIED for {content}"
+                })
+        elif a_type == "vision":
+            if self.ask_human_for_permission(f"Analyze plot: {content}"):
+                self._action_vision(content)
+                if self.mode == "auto":
+                    self._auto_continue()
+            else:
+                print("[System] Vision analysis denied by user.")
+                self._log("action", f"VISION DENIED for {content}")
+                self.conversation_history.append({
+                    "role": "assistant",
+                    "content": f"[Agent] VISION DENIED for {content}"
+                })
+        elif a_type == "rag_search":
+            # For RAG search, we don't typically need explicit human permission
+            # as it's an internal information retrieval tool.
+            self._action_rag_search(content)
+            if self.mode == "auto":
+                self._auto_continue()
+        else:
+            print(f"[System] Unknown action type: {a_type}")
+            self._log("action", f"Unknown action {a_type}")
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": f"[Agent] Unknown action {a_type}"
+            })
+
+    def _auto_continue(self):
+        """Auto-continue in auto mode by generating next step automatically."""
+        if self.mode != "auto":
+            return
+            
+        print(f"\n[AUTO MODE] Continuing autonomously...")
+        
+        # Add auto-continue prompt
+        auto_prompt = "Continue with the next step in the experimental workflow based on current results and context."
+        self.conversation_history.append({
+            "role": "system", 
+            "content": f"AUTO_CONTINUE: {auto_prompt}"
+        })
+        
+        # Generate next response
+        full_prompt = self._build_prompt()
+        
+        llm_response = call_llm(
+            user_prompt=full_prompt,
+            system_message=self.system_instruction,
+            max_tokens=3000,
+            temperature=0.7
+        )
+        self._log("assistant", f"(AUTO) {llm_response}")
+        self.conversation_history.append({"role": "assistant", "content": f"(AUTO) {llm_response}"})
+        
+        # Process the auto-response (but don't auto-continue again to avoid loops)
+        chain_of_thought = self._parse_think(llm_response)
+        if chain_of_thought:
+            self._log("assistant", f"(THINK-AUTO) {chain_of_thought}")
+            self.conversation_history.append({"role": "assistant", "content": f"(THINK-AUTO) {chain_of_thought}"})
+
+        actions = self._parse_actions(llm_response)
+        
+        if len(actions) > 1:
+            print(f"[AUTO MODE] Agent attempted {len(actions)} actions. Using first action only.")
+            actions = actions[:1]
+        elif len(actions) == 0:
+            print("[AUTO MODE] No actions found in auto-response.")
+            return
+
+        # Execute the auto action (without further auto-continuation)
+        action_dict = actions[0]
+        a_type = action_dict.get("type", "").lower()
+        content = action_dict.get("content", "")
+
+        if a_type == "message":
+            self._action_message(content)
+            # Stop auto-continue when agent sends message
+        elif a_type == "read":
+            self._action_read_file(content)
+        elif a_type == "write":
+            if self.ask_human_for_permission(f"Write file: {content}"):
+                self._action_write_file(content)
+        elif a_type == "run":
+            if self.ask_human_for_permission(f"Run command: {content}"):
+                self._action_run_command(content)
+        elif a_type == "vision":
+            if self.ask_human_for_permission(f"Analyze plot: {content}"):
+                self._action_vision(content)
+        elif a_type == "rag_search":
+            self._action_rag_search(content)
+        else:
+            print(f"[AUTO MODE] Unknown action type: {a_type}")
 
     def _parse_actions(self, llm_text: str):
         """
@@ -713,9 +800,12 @@ You have the following constraints and abilities:
                 plot_filename = os.path.basename(filepath)
                 filepath = os.path.join(self.data_dir, plot_filename)
         
-        # Check if the file is in the allowed data directory
-        if not filepath.startswith(self.data_dir):
-            msg = f"[System] VISION denied: {filepath} is not in the allowed data directory ({self.data_dir})."
+        # Check if the file is in the allowed data directory (current run) or valid historical plot
+        is_current_run = filepath.startswith(self.data_dir)
+        is_historical_plot = self._is_valid_historical_plot_path(filepath) if not is_current_run else False
+        
+        if not is_current_run and not is_historical_plot:
+            msg = f"[System] VISION denied: {filepath} is not in allowed directories (current: {self.data_dir} or historical runs)."
             print(msg)
             self._log("action", msg)
             self.conversation_history.append({"role": "assistant", "content": msg})
@@ -1038,6 +1128,43 @@ You have the following constraints and abilities:
         print(rag_results_message)
         self._log("assistant", rag_results_message)
         self.conversation_history.append({"role": "assistant", "content": rag_results_message})
+
+    def _is_valid_historical_plot_path(self, filepath):
+        """
+        Check if a filepath is a valid historical plot path within the project structure.
+        
+        Args:
+            filepath: Path to check
+            
+        Returns:
+            bool: True if valid historical plot path
+        """
+        # Convert to absolute path for comparison
+        if not os.path.isabs(filepath):
+            return False
+            
+        # Must be within the project runs directory
+        runs_base_dir = os.path.join(self.project_root_dir, self.project_name, self.runs_dir_name)
+        runs_base_dir = os.path.abspath(runs_base_dir)
+        filepath = os.path.abspath(filepath)
+        
+        if not filepath.startswith(runs_base_dir):
+            return False
+            
+        # Must be in a data subdirectory
+        if not "/data/" in filepath.replace("\\", "/") and not "\\data\\" in filepath:
+            return False
+            
+        # Must be a plot file
+        if not filepath.endswith('.png'):
+            return False
+            
+        # Must be a recognized plot type
+        filename = os.path.basename(filepath)
+        if not any(plot_type in filename for plot_type in ['ESR', 'FindNV', 'GalvoScan', 'Optimization']):
+            return False
+            
+        return True
 
 
 if __name__ == "__main__":

@@ -62,3 +62,9 @@ ESR measures the fluorescent response of microwave drive. ESR fit is the 1D Gaus
 
 3. Describe RAG search more clearly to the agent, basically it wants to use it whenever it feels that learning from past history is helpful for the current experiment. 
 4. Generally look at the system prompts again and see if they are logical,concise, coherent and clear.
+
+
+# TODO --June 10
+1. make the system prompt clear about reading the default configs and then write the configs folowing the same format
+2. Make the assistant mode and auto mode better--> assistant mode is basically the version we have now, but every turn the agent can only use one tool (tell it in the system prompt show the read, write, run, message,vision examples clearly); In auto mode, feed the agent it's own assistant content and don't prompt the user in the cli, unless it's using message to ask the human for clarification or help, also be clear about it in the system prompt about the tool as in assistant mode, 
+3. Whenever it's deciding what to do with the experiment results and unsure it should use rag search to refer back to past history  
