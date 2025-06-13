@@ -222,9 +222,9 @@ You have the following constraints and abilities:
    - Use RAG search liberally when it could help improve experimental decisions or resolve issues
    - To use it, produce an <action> block with type "rag_search". The "content" should be a query describing what you're looking for
    - Example queries:
-     - "How were similar experimental errors resolved previously?"
-     - "What parameter adjustments improved ESR signal quality in past experiments?"
-     - "What coordinates were successful for NV center measurements?"
+     - "FindNV bright spot in lower right corner - what were successful next steps in previous experiments?"
+     - "ESR signal quality is poor at 2.87 GHz - what parameter adjustments worked before?"
+     - "Galvo scan shows multiple bright spots - how to prioritize which ones to investigate first?"
    - The search results will provide relevant context from past conversations to inform your current decisions
    - **Historical Plot Analysis**: When RAG search returns references to historical plots (e.g., "GalvoScan_plot.png from run_20240615_143022"), you can analyze those plots using vision action with the full historical path
    - RAG search is particularly useful when planning experimental parameters, troubleshooting issues, or building on previous successes
@@ -299,6 +299,70 @@ You have the following constraints and abilities:
      ```
    - The `"type"` must be one of: `"message"`, `"read"`, `"write"`, `"run"`, `"vision"`, or `"rag_search"`.
 
+2.1) Action Examples:
+   **READ Example:**
+   ```
+   <action>
+   {{
+     "type": "read",
+     "content": "{self.default_dir}\\configs\\default_galvo_scan_config.json"
+   }}
+   </action>
+   ```
+
+   **WRITE Example:**
+   ```
+   <action>
+   {{
+     "type": "write",
+     "content": {{
+       "path": "{self.base_dir}\\configs\\my_galvo_scan_config.json",
+       "data": "<modified version of default config with updated parameters>"
+     }}
+   }}
+   </action>
+   ```
+
+   **RUN Example:**
+   ```
+   <action>
+   {{
+     "type": "run",
+     "content": "py {self.scripts_dir}\\galvo_scan.py --config {self.base_dir}\\configs\\my_galvo_scan_config.json --output-dir {self.base_dir}\\data\\"
+   }}
+   </action>
+   ```
+
+   **VISION Example:**
+   ```
+   <action>
+   {{
+     "type": "vision",
+     "content": "{self.base_dir}\\data\\<plot_name>.png"
+   }}
+   </action>
+   ```
+
+   **MESSAGE Example:**
+   ```
+   <action>
+   {{
+     "type": "message",
+     "content": "The FindNV scan shows the brightest spot is in the lower right corner at coordinates (18.5, -12.3). Should I proceed with optimization at these coordinates, or would you prefer to investigate other bright spots first?"
+   }}
+   </action>
+   ```
+
+   **RAG_SEARCH Example:**
+   ```
+   <action>
+   {{
+     "type": "rag_search",
+     "content": "FindNV bright spot in lower right corner - what were successful next steps in previous experiments?"
+   }}
+   </action>
+   ```
+
 3) Security & Directory Rules:
    - Read Access: Only from the `configs\\` or `data\\` directories.
    - Write Access: Only to the `configs\\` or `data\\` directories.
@@ -326,16 +390,17 @@ You have the following constraints and abilities:
    - Use the command: `vision <plot_file_path>`.
    - The plot file must reside in the `data\\` directory.
    - Expected plots and their paths:
-     - `{self.base_dir}\\data\\ESR_plot.png`
-     - `{self.base_dir}\\data\\FindNV_plot.png`
-     - `{self.base_dir}\\data\\GalvoScan_plot.png`
-     - `{self.base_dir}\\data\\Optimization_plot.png`
-   - For `GalvoScan_plot.png`, NVs are associated with large bright dots; estimate and read out the center coordinates of bright dots for subsequent steps.
+     - `{self.base_dir}\\data\\<ESR_plot_timestampatgeneartion.png>`
+     - `{self.base_dir}\\data\\<FindNV_plot_timestampatgeneartion.png>`
+     - `{self.base_dir}\\data\\<GalvoScan_plot_timestampatgeneartion.png>`
+     - `{self.base_dir}\\data\\<Optimization_plot_timestampatgeneartion.png>`
+   - For `GalvoScan_plot_timestampatgeneartion.png`, NVs are associated with large bright dots; estimate and read out the center coordinates of bright dots for subsequent steps.
 
 7) Autonomous Configuration Management & Usage Flow:
    - Configuration Strategy: 
      - Default configurations are available for each experiment type at `{self.default_dir}\\configs\\` (e.g., `default_esr_config.json`)
-     - These defaults serve as templates but can be customized for each experiment
+     - **CRITICAL: When writing new configs, you MUST maintain the EXACT same structure and format as the default config**
+     - **CRITICAL: Only modify parameter values, never change keys, structure, or data types**
      - Always read the appropriate default config first, then modify parameters as needed for your specific experiment
    - Configuration Writing: 
      - Create customized configuration files in your current run directory: `{self.base_dir}\\configs\\`
@@ -385,9 +450,9 @@ You have the following constraints and abilities:
    - Use RAG search liberally when it could help improve experimental decisions or resolve issues
    - To use it, produce an <action> block with type "rag_search". The "content" should be a query describing what you're looking for
    - Example queries:
-     - "How were similar experimental errors resolved previously?"
-     - "What parameter adjustments improved ESR signal quality in past experiments?"
-     - "What coordinates were successful for NV center measurements?"
+     - "FindNV bright spot in lower right corner - what were successful next steps in previous experiments?"
+     - "ESR signal quality is poor at 2.87 GHz - what parameter adjustments worked before?"
+     - "Galvo scan shows multiple bright spots - how to prioritize which ones to investigate first?"
    - The search results will provide relevant context from past conversations to inform your current decisions
    - **Historical Plot Analysis**: When RAG search returns references to historical plots (e.g., "GalvoScan_plot.png from run_20240615_143022"), you can analyze those plots using vision action with the full historical path
    - RAG search is particularly useful when planning experimental parameters, troubleshooting issues, or building on previous successes
@@ -447,7 +512,9 @@ You have the following constraints and abilities:
                 "role": "assistant",
                 "content": f"[AUTO MODE] Proceeding autonomously with: {description}"
             })
-            print(f"[AUTO MODE] Proceeding autonomously with: {description}")
+            # Cleaner output for auto mode - just show what's happening
+            action_type = description.split(":")[0] if ":" in description else description
+            print(f"🤖 {action_type}")
             return True
         else:
             # In assistant mode, ask for permission as before
@@ -469,14 +536,20 @@ You have the following constraints and abilities:
         """
         Process user prompt: log it, build the prompt, call the LLM, parse and execute actions.
         """
-        print(f"\n[Agent] Processing user input: '{user_message[:50]}{'...' if len(user_message) > 50 else ''}'")  
+        if self.mode == "assistant":
+            print(f"\n[Agent] Processing user input: '{user_message[:50]}{'...' if len(user_message) > 50 else ''}'")  
+        else:
+            print(f"🔄 Processing: {user_message[:50]}{'...' if len(user_message) > 50 else ''}")
+        
         self._log("user", user_message)
         self.conversation_history.append({"role": "user", "content": user_message})
         
         self._log("agent", "Building prompt with RAG context")
         full_prompt = self._build_prompt()
         
-        print("[Agent] Calling LLM with enhanced prompt...")
+        if self.mode == "assistant":
+            print("[Agent] Calling LLM with enhanced prompt...")
+        # In auto mode, don't show "Calling LLM" - it's noise
         llm_response = call_llm(
             user_prompt=full_prompt,
             system_message=self.system_instruction,
@@ -564,69 +637,94 @@ You have the following constraints and abilities:
             })
 
     def _auto_continue(self):
-        """Auto-continue in auto mode by generating next step automatically."""
+        """Auto-continue in auto mode by generating next steps automatically until agent sends a message."""
         if self.mode != "auto":
             return
             
-        print(f"\n[AUTO MODE] Continuing autonomously...")
+        max_auto_steps = 10  # Prevent infinite loops
+        auto_step_count = 0
         
-        # Add auto-continue prompt
-        auto_prompt = "Continue with the next step in the experimental workflow based on current results and context."
-        self.conversation_history.append({
-            "role": "system", 
-            "content": f"AUTO_CONTINUE: {auto_prompt}"
-        })
-        
-        # Generate next response
-        full_prompt = self._build_prompt()
-        
-        llm_response = call_llm(
-            user_prompt=full_prompt,
-            system_message=self.system_instruction,
-            max_tokens=3000,
-            temperature=0.7
-        )
-        self._log("assistant", f"(AUTO) {llm_response}")
-        self.conversation_history.append({"role": "assistant", "content": f"(AUTO) {llm_response}"})
-        
-        # Process the auto-response (but don't auto-continue again to avoid loops)
-        chain_of_thought = self._parse_think(llm_response)
-        if chain_of_thought:
-            self._log("assistant", f"(THINK-AUTO) {chain_of_thought}")
-            self.conversation_history.append({"role": "assistant", "content": f"(THINK-AUTO) {chain_of_thought}"})
+        while auto_step_count < max_auto_steps:
+            auto_step_count += 1
+            print(f"🔄 Thinking... (step {auto_step_count})")
+            
+            # Add auto-continue prompt
+            auto_prompt = "Continue with the next step in the experimental workflow based on current results and context."
+            self.conversation_history.append({
+                "role": "system", 
+                "content": f"AUTO_CONTINUE: {auto_prompt}"
+            })
+            
+            # Generate next response
+            full_prompt = self._build_prompt()
+            
+            llm_response = call_llm(
+                user_prompt=full_prompt,
+                system_message=self.system_instruction,
+                max_tokens=3000,
+                temperature=0.7
+            )
+            self._log("assistant", f"(AUTO-{auto_step_count}) {llm_response}")
+            self.conversation_history.append({"role": "assistant", "content": f"(AUTO-{auto_step_count}) {llm_response}"})
+            
+            # Process the auto-response
+            chain_of_thought = self._parse_think(llm_response)
+            if chain_of_thought:
+                self._log("assistant", f"(THINK-AUTO-{auto_step_count}) {chain_of_thought}")
+                self.conversation_history.append({"role": "assistant", "content": f"(THINK-AUTO-{auto_step_count}) {chain_of_thought}"})
 
-        actions = self._parse_actions(llm_response)
+            actions = self._parse_actions(llm_response)
+            
+            if len(actions) > 1:
+                print(f"[AUTO MODE] Agent attempted {len(actions)} actions. Using first action only.")
+                actions = actions[:1]
+            elif len(actions) == 0:
+                print("[AUTO MODE] No actions found in auto-response. Stopping auto-continue.")
+                break
+
+            # Execute the auto action
+            action_dict = actions[0]
+            a_type = action_dict.get("type", "").lower()
+            content = action_dict.get("content", "")
+
+            if a_type == "message":
+                self._action_message(content)
+                # Stop auto-continue when agent sends message - human input needed
+                print("💬 Agent has a question for you:")
+                break
+            elif a_type == "read":
+                self._action_read_file(content)
+                # Continue auto loop after read
+            elif a_type == "write":
+                if self.ask_human_for_permission(f"Write file: {content}"):
+                    self._action_write_file(content)
+                    # Continue auto loop after write
+                else:
+                    print("[AUTO MODE] Write denied. Stopping auto-continue.")
+                    break
+            elif a_type == "run":
+                if self.ask_human_for_permission(f"Run command: {content}"):
+                    self._action_run_command(content)
+                    # Continue auto loop after run
+                else:
+                    print("[AUTO MODE] Run denied. Stopping auto-continue.")
+                    break
+            elif a_type == "vision":
+                if self.ask_human_for_permission(f"Analyze plot: {content}"):
+                    self._action_vision(content)
+                    # Continue auto loop after vision
+                else:
+                    print("[AUTO MODE] Vision denied. Stopping auto-continue.")
+                    break
+            elif a_type == "rag_search":
+                self._action_rag_search(content)
+                # Continue auto loop after RAG search
+            else:
+                print(f"[AUTO MODE] Unknown action type: {a_type}. Stopping auto-continue.")
+                break
         
-        if len(actions) > 1:
-            print(f"[AUTO MODE] Agent attempted {len(actions)} actions. Using first action only.")
-            actions = actions[:1]
-        elif len(actions) == 0:
-            print("[AUTO MODE] No actions found in auto-response.")
-            return
-
-        # Execute the auto action (without further auto-continuation)
-        action_dict = actions[0]
-        a_type = action_dict.get("type", "").lower()
-        content = action_dict.get("content", "")
-
-        if a_type == "message":
-            self._action_message(content)
-            # Stop auto-continue when agent sends message
-        elif a_type == "read":
-            self._action_read_file(content)
-        elif a_type == "write":
-            if self.ask_human_for_permission(f"Write file: {content}"):
-                self._action_write_file(content)
-        elif a_type == "run":
-            if self.ask_human_for_permission(f"Run command: {content}"):
-                self._action_run_command(content)
-        elif a_type == "vision":
-            if self.ask_human_for_permission(f"Analyze plot: {content}"):
-                self._action_vision(content)
-        elif a_type == "rag_search":
-            self._action_rag_search(content)
-        else:
-            print(f"[AUTO MODE] Unknown action type: {a_type}")
+        if auto_step_count >= max_auto_steps:
+            print(f"[AUTO MODE] Reached maximum auto-steps ({max_auto_steps}). Stopping to prevent infinite loop.")
 
     def _parse_actions(self, llm_text: str):
         """
@@ -647,7 +745,10 @@ You have the following constraints and abilities:
         """
         Print a message and log it.
         """
-        print(message_content)
+        if self.mode == "auto":
+            print(f"🤖 {message_content}")
+        else:
+            print(message_content)
         self._log("action", f"MESSAGE: {message_content}")
         self.conversation_history.append({"role": "assistant", "content": message_content})
 
@@ -1103,14 +1204,18 @@ You have the following constraints and abilities:
         Perform a RAG search using the given query, augmented with recent conversation context.
         """
         self._log("action", f"RAG_SEARCH (raw query): {query}")
-        print(f"[Agent] Performing RAG search for raw query: '{query}'")
+        
+        if self.mode == "auto":
+            print(f"🔍 Searching past experience...")
+        else:
+            print(f"[Agent] Performing RAG search for query: '{query}'")
 
         # Add recent conversation context to the query for more robust search
         recent_context = self._get_recent_conversation_context(num_turns=8)
         contextualized_query = f"Based on the recent conversation below, find relevant information for the user's query.\n\n--- RECENT CONVERSATION ---\n{recent_context}\n\n--- USER QUERY ---\n{query}"
         
         self._log("action", f"RAG_SEARCH (contextualized query): {contextualized_query}")
-        print(f"[Agent] Contextualized query for RAG search: '{contextualized_query}'")
+        # Don't print the full contextualized query - it's too verbose for CLI
 
         rag_results = self._get_rag_context(contextualized_query) # Use the new contextualized query
 
@@ -1121,12 +1226,25 @@ You have the following constraints and abilities:
             else:
                 formatted_results = str(rag_results) # Ensure it's a string
 
-            rag_results_message = f"[Agent] RAG search results for query '{query}':\n{formatted_results}"
+            if self.mode == "auto":
+                # In auto mode, just show that we found relevant context, not the full content
+                rag_results_message = f"[Agent] Found relevant context from past experiments"
+                print(f"✅ Found relevant past experience")
+            else:
+                # In assistant mode, show the full results
+                rag_results_message = f"[Agent] RAG search results for query '{query}':\n{formatted_results}"
+                print(rag_results_message)
         else:
-            rag_results_message = f"[Agent] No relevant context found by RAG search for query '{query}'."
+            if self.mode == "auto":
+                rag_results_message = f"[Agent] No relevant context found for query '{query}'"
+                print(f"ℹ️ No relevant past experience found")
+            else:
+                rag_results_message = f"[Agent] No relevant context found by RAG search for query '{query}'."
+                print(rag_results_message)
 
-        print(rag_results_message)
-        self._log("assistant", rag_results_message)
+        # Always log the full results for debugging, regardless of mode
+        full_log_message = f"[Agent] RAG search results for query '{query}':\n{formatted_results if rag_results else 'No results'}"
+        self._log("assistant", full_log_message)
         self.conversation_history.append({"role": "assistant", "content": rag_results_message})
 
     def _is_valid_historical_plot_path(self, filepath):
