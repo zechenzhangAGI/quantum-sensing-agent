@@ -132,7 +132,6 @@ You have the following constraints and abilities:
    - Read Access: Only from the `configs\\` or `data\\` directories.
    - Write Access: Only to the `configs\\` or `data\\` directories.
    - Run Access: Only scripts in the `scripts\\` directory.
-        - For `write`, `run`, or `vision` actions, always ask user permission first. If the user says "no," do not proceed.
 
 4) Key File Paths & Self.base_dir:
    - All outputs, file paths, or results must be written to the directory {self.base_dir}.
@@ -151,8 +150,7 @@ You have the following constraints and abilities:
      where <script_name> is one of ESR, find_nv, galvo_scan, or optimize.
 
 6) Vision Option:
-   - In addition to running scripts, you can analyze plot images.
-   - Use the command: `vision <plot_file_path>`.
+   - In addition to running scripts, you can analyze plot images using the vision action.
    - The plot file must reside in the `data\\` directory.
    - Expected plots and their paths:
      - `{self.base_dir}\\data\\ESR_plot.png`
@@ -164,17 +162,14 @@ You have the following constraints and abilities:
 7) Configuration Management & Usage Flow:
    - Configuration Strategy: 
      - Default configurations are available for each experiment type at `{self.default_dir}\\configs\\` (e.g., `default_esr_config.json`)
-     - These defaults serve as templates but can be customized for each experiment
+     - **CRITICAL: When writing new configs, you MUST maintain the EXACT same structure and format as the default config**
+     - **CRITICAL: Only modify parameter values, never change keys, structure, or data types**
      - Always read the appropriate default config first, then modify parameters as needed for your specific experiment
    - Configuration Writing: 
      - Create customized configuration files in your current run directory: `{self.base_dir}\\configs\\`
      - Base modifications on insights from previous experiments and current experimental goals
      - Each run should have its own config files to maintain reproducibility
-   - Experiment Execution: Run the desired experiment with:
-     ```
-     py {self.default_dir}\\scripts\\<script_name>.py --config <config_file> --output-dir projects\\NVExperiment\\runs\\run_(insert TIMESTAMP here)\\data\\
-     ```
-     where `<script_name>` is one of: `ESR`, `find_nv`, `galvo_scan`, or `optimize`.
+
 
 8) Behavior & Permissions:
    - When you `<read>` a file, you receive its content internally. If you want the user to see it, produce an `<action type="message">` block.
@@ -183,40 +178,24 @@ You have the following constraints and abilities:
    - Use `<action type="message">` to communicate with the user.
 
 9) Output Format:
-   - The response must have exactly one `<think>` block and then zero or more `<action>` blocks.
-   - Example Minimal Structure:
+   - The response must have exactly one `<think>` block and exactly **ONE** `<action>` block.
+   - Example Structure:
      ```
-     <think>I will read the default configuration file or the user-specified configuration based on the provided case.</think>
+     <think>I will read the default configuration file first to understand the structure.</think>
      <action>
      {{
        "type": "read",
        "content": "{self.default_dir}\\configs\\default_esr_config.json"
      }}
      </action>
-     <action>
-     {{
-       "type": "write",
-       "content": {{
-         "path": f"{self.base_dir}\\configs\\my_new_experiment_config.json",
-         "data": "<updated configuration dictionary>"
-       }}
-     }}
-     </action>
      ```
    - Always ensure that file operations and outputs are associated with {self.base_dir}.
 
-10) Configuration File Strategy:
-    - Default configurations provide starting points for each experiment type
-    - Located at: `{self.default_dir}\\configs\\default_<experiment>_config.json`
-    - Workflow: Read default → Customize based on experiment needs → Save to current run directory → Execute experiment
-    - Each experiment run should have its own configuration files in `{self.base_dir}\\configs\\` for reproducibility
-    - This approach allows experimentation while preserving working defaults
-
-11) Restrictions:
+10) Restrictions:
     - Do not reveal or replicate your chain-of-thought except inside the `<think>` block.
     - Do not produce any actions outside of `"message"`, `"read"`, `"write"`, `"run"`, `"vision"`, or `"rag_search"`.
 
-12) RAG Search Tool:
+11) RAG Search Tool:
    - When you feel stuck, need to learn from past experience, or believe relevant information exists in previous conversations, use the "rag_search" tool
    - This powerful tool searches through your conversation history embeddings to find contextually relevant information
    - Use RAG search liberally when it could help improve experimental decisions or resolve issues
@@ -386,8 +365,7 @@ You have the following constraints and abilities:
      where <script_name> is one of ESR, find_nv, galvo_scan, or optimize.
 
 6) Vision Option:
-   - In addition to running scripts, you can analyze plot images.
-   - Use the command: `vision <plot_file_path>`.
+   - In addition to running scripts, you can analyze plot images using the vision action.
    - The plot file must reside in the `data\\` directory.
    - Expected plots and their paths:
      - `{self.base_dir}\\data\\<ESR_plot_timestampatgeneartion.png>`
@@ -406,11 +384,7 @@ You have the following constraints and abilities:
      - Create customized configuration files in your current run directory: `{self.base_dir}\\configs\\`
      - Base modifications on insights from previous experiments and current experimental goals
      - Each run should have its own config files to maintain reproducibility
-   - Experiment Execution: Run the desired experiment autonomously with:
-     ```
-     py {self.default_dir}\\scripts\\<script_name>.py --config <config_file> --output-dir projects\\NVExperiment\\runs\\run_(insert TIMESTAMP here)\\data\\
-     ```
-     where `<script_name>` is one of: `ESR`, `find_nv`, `galvo_scan`, or `optimize`.
+
 
 8) Autonomous Behavior & Communication:
    - When you `<read>` a file, you receive its content internally. If important for the user to see, produce an `<action type="message">` block.
@@ -421,7 +395,7 @@ You have the following constraints and abilities:
 
 9) Output Format:
    - The response must have exactly one `<think>` block and exactly **ONE** `<action>` block.
-   - Example Minimal Structure:
+   - Example Structure:
      ```
      <think>I will autonomously read the default configuration file and proceed with the experiment.</think>
      <action>
@@ -433,18 +407,11 @@ You have the following constraints and abilities:
      ```
    - Always ensure that file operations and outputs are associated with {self.base_dir}.
 
-10) Configuration File Strategy:
-    - Default configurations provide starting points for each experiment type
-    - Located at: `{self.default_dir}\\configs\\default_<experiment>_config.json`
-    - Workflow: Read default → Customize based on experiment needs → Save to current run directory → Execute experiment
-    - Each experiment run should have its own configuration files in `{self.base_dir}\\configs\\` for reproducibility
-    - This approach allows experimentation while preserving working defaults
-
-11) Restrictions:
+10) Restrictions:
     - Do not reveal or replicate your chain-of-thought except inside the `<think>` block.
     - Do not produce any actions outside of `"message"`, `"read"`, `"write"`, `"run"`, `"vision"`, or `"rag_search"`.
 
-12) RAG Search Tool:
+11) RAG Search Tool:
    - When you feel stuck, need to learn from past experience, or believe relevant information exists in previous conversations, use the "rag_search" tool
    - This powerful tool searches through your conversation history embeddings to find contextually relevant information
    - Use RAG search liberally when it could help improve experimental decisions or resolve issues
@@ -481,12 +448,36 @@ You have the following constraints and abilities:
     def _build_prompt(self) -> str:
         """
         Combine system_instruction, RAG results, and conversation_history into a single prompt.
-        Also include suggestions for relevant plots.
+        RAG results are clearly separated from the current conversation.
         """
         prompt = self.system_instruction.strip()
         
-        # Add conversation history
+        # Separate RAG results from regular conversation
+        rag_results = []
+        regular_conversation = []
+        
         for turn in self.conversation_history:
+            if turn["role"] == "rag_search_result":
+                rag_results.append(turn)
+            else:
+                regular_conversation.append(turn)
+        
+        # Add RAG results section if any exist
+        if rag_results:
+            prompt += "\n\n" + "="*60
+            prompt += "\nRELEVANT CONTEXT FROM PAST EXPERIMENTS:"
+            prompt += "\n" + "="*60
+            
+            for rag_turn in rag_results:
+                prompt += f"\n{rag_turn['content']}"
+            
+            prompt += "\n" + "="*60
+            prompt += "\nEND OF PAST EXPERIMENT CONTEXT"
+            prompt += "\n" + "="*60
+        
+        # Add current conversation history
+        prompt += "\n\nCURRENT CONVERSATION:"
+        for turn in regular_conversation:
             role = turn["role"]
             content = turn["content"]
             if role == "user":
@@ -496,7 +487,7 @@ You have the following constraints and abilities:
             else:
                 prompt += f"\n{role.capitalize()}: {content}"
         
-        prompt += "\n\nPlease respond with a <think> block and any <action> blocks you need for the next step. Please carefully wait for user and experiment feedback before proceeding to too many actions."
+        prompt += "\n\nPlease respond with a <think> block and exactly ONE <action> block for the next step."
         return prompt
 
     def ask_human_for_permission(self, description: str) -> bool:
@@ -1047,7 +1038,7 @@ You have the following constraints and abilities:
             return ""
         
         print(f"[RAG] Found {len(embeddings_files)} embedding files to search")
-        self._log("rag", f"Searching {len(embeddings_files)} embedding files for query: {query}")
+        self._log("rag_search", f"RAG_CONTEXT_SEARCH: Searching {len(embeddings_files)} embedding files for query: {query}")
         
         # Search for similar contexts across all embedding files
         results = []
@@ -1063,7 +1054,7 @@ You have the following constraints and abilities:
                     print(f"[RAG] No result or error for file: {os.path.basename(embedding_file)}")
             except Exception as e:
                 print(f"[RAG] Error searching embeddings file {embedding_file}: {str(e)}")
-                self._log("rag", f"Error searching embeddings file {embedding_file}: {str(e)}")
+                self._log("rag_search", f"RAG_CONTEXT_ERROR: Error searching embeddings file {embedding_file}: {str(e)}")
         
         # Sort by similarity score and take top_k
         results.sort(key=lambda x: x["score"], reverse=True)
@@ -1111,12 +1102,16 @@ You have the following constraints and abilities:
             return
 
         step = self.embedding_chunk_size - self.embedding_chunk_overlap
-        print(f"[Embeddings] Preparing to save conversation with {len(self.conversation_history)} turns in overlapping chunks of size {self.embedding_chunk_size} with a step of {step}.")
-        self._log("embeddings", f"Saving conversation with {len(self.conversation_history)} turns in overlapping chunks of size {self.embedding_chunk_size}, step {step}.")
+        print(f"[Embeddings] Preparing to save conversation with {len(self.conversation_history)} turns ({len(conversation_for_embedding)} for embedding after filtering RAG results) in overlapping chunks of size {self.embedding_chunk_size} with a step of {step}.")
+        self._log("embeddings", f"Saving conversation with {len(self.conversation_history)} turns ({len(conversation_for_embedding)} for embedding) in overlapping chunks of size {self.embedding_chunk_size}, step {step}.")
 
+        # Filter out RAG search results from conversation history before chunking
+        # (RAG results are already from past conversations, no need to re-embed them)
+        conversation_for_embedding = [turn for turn in self.conversation_history if turn["role"] != "rag_search_result"]
+        
         chunk_index = 0
-        for i in range(0, len(self.conversation_history), step):
-            chunk = self.conversation_history[i:i + self.embedding_chunk_size]
+        for i in range(0, len(conversation_for_embedding), step):
+            chunk = conversation_for_embedding[i:i + self.embedding_chunk_size]
             
             # If the last chunk is smaller than the overlap, it's likely not useful and has been mostly covered.
             if len(chunk) < self.embedding_chunk_overlap and i > 0:
@@ -1185,17 +1180,19 @@ You have the following constraints and abilities:
         user_messages = sum(1 for turn in self.conversation_history if turn["role"] == "user")
         assistant_messages = sum(1 for turn in self.conversation_history if turn["role"] == "assistant")
         vision_analyses = sum(1 for turn in self.conversation_history if turn["role"] == "action" and turn["content"].startswith("VISION:"))
-        # Corrected vision_analyses to count "action" with "VISION:"
+        rag_searches = sum(1 for turn in self.conversation_history if turn["role"] == "rag_search_result")
 
-        print(f"[Embeddings] Overall conversation summary: {user_messages} user messages, {assistant_messages} assistant responses, {vision_analyses} vision actions.")
-        self._log("embeddings", f"Overall conversation summary: {user_messages} user messages, {assistant_messages} assistant responses, {vision_analyses} vision actions.")
+        print(f"[Embeddings] Overall conversation summary: {user_messages} user messages, {assistant_messages} assistant responses, {vision_analyses} vision actions, {rag_searches} RAG searches.")
+        self._log("embeddings", f"Overall conversation summary: {user_messages} user messages, {assistant_messages} assistant responses, {vision_analyses} vision actions, {rag_searches} RAG searches.")
 
     def _get_recent_conversation_context(self, num_turns=8) -> str:
-        """Builds a context string from the most recent turns of the conversation."""
+        """Builds a context string from the most recent turns of the conversation, excluding RAG search results."""
         if num_turns <= 0:
             return ""
         
-        recent_turns = self.conversation_history[-num_turns:]
+        # Filter out RAG search results to avoid circular references
+        regular_conversation = [turn for turn in self.conversation_history if turn["role"] != "rag_search_result"]
+        recent_turns = regular_conversation[-num_turns:]
         context_lines = [f"{turn['role']}: {turn['content']}" for turn in recent_turns]
         return "\n".join(context_lines)
 
@@ -1203,7 +1200,7 @@ You have the following constraints and abilities:
         """
         Perform a RAG search using the given query, augmented with recent conversation context.
         """
-        self._log("action", f"RAG_SEARCH (raw query): {query}")
+        self._log("rag_search", f"RAG_SEARCH_QUERY: {query}")
         
         if self.mode == "auto":
             print(f"🔍 Searching past experience...")
@@ -1214,7 +1211,7 @@ You have the following constraints and abilities:
         recent_context = self._get_recent_conversation_context(num_turns=8)
         contextualized_query = f"Based on the recent conversation below, find relevant information for the user's query.\n\n--- RECENT CONVERSATION ---\n{recent_context}\n\n--- USER QUERY ---\n{query}"
         
-        self._log("action", f"RAG_SEARCH (contextualized query): {contextualized_query}")
+        self._log("rag_search", f"RAG_SEARCH_CONTEXTUALIZED_QUERY: {contextualized_query}")
         # Don't print the full contextualized query - it's too verbose for CLI
 
         rag_results = self._get_rag_context(contextualized_query) # Use the new contextualized query
@@ -1226,15 +1223,32 @@ You have the following constraints and abilities:
             else:
                 formatted_results = str(rag_results) # Ensure it's a string
 
+            # Format RAG results with clear separation markers
+            clearly_formatted_rag = f"""
+=== RAG SEARCH RESULTS START ===
+Query: {query}
+Found relevant context from past experiments:
+
+{formatted_results}
+
+=== RAG SEARCH RESULTS END ===
+"""
+
             if self.mode == "auto":
                 # In auto mode, just show that we found relevant context, not the full content
                 rag_results_message = f"[Agent] Found relevant context from past experiments"
                 print(f"✅ Found relevant past experience")
             else:
                 # In assistant mode, show the full results
-                rag_results_message = f"[Agent] RAG search results for query '{query}':\n{formatted_results}"
+                rag_results_message = f"[Agent] RAG search results for query '{query}':\n{clearly_formatted_rag}"
                 print(rag_results_message)
         else:
+            clearly_formatted_rag = f"""
+=== RAG SEARCH RESULTS START ===
+Query: {query}
+No relevant context found in past experiments.
+=== RAG SEARCH RESULTS END ===
+"""
             if self.mode == "auto":
                 rag_results_message = f"[Agent] No relevant context found for query '{query}'"
                 print(f"ℹ️ No relevant past experience found")
@@ -1242,10 +1256,16 @@ You have the following constraints and abilities:
                 rag_results_message = f"[Agent] No relevant context found by RAG search for query '{query}'."
                 print(rag_results_message)
 
-        # Always log the full results for debugging, regardless of mode
-        full_log_message = f"[Agent] RAG search results for query '{query}':\n{formatted_results if rag_results else 'No results'}"
-        self._log("assistant", full_log_message)
-        self.conversation_history.append({"role": "assistant", "content": rag_results_message})
+        # Always log the full results with clear labeling, regardless of mode
+        self._log("rag_search", f"RAG_SEARCH_RESULTS: {clearly_formatted_rag}")
+        
+        # Add to conversation history with special role to distinguish from regular conversation
+        self.conversation_history.append({
+            "role": "rag_search_result", 
+            "content": clearly_formatted_rag,
+            "query": query,
+            "timestamp": self._current_timestamp()
+        })
 
     def _is_valid_historical_plot_path(self, filepath):
         """
