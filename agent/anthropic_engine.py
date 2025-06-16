@@ -8,10 +8,11 @@ import sys
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
-load_dotenv()
+load_dotenv(dotenv_path='C:\\Users\\NVAFM_6th_fl_2\\quantum-sensing-agent 0614\\quantum-sensing-agent\\agent\\.env',override="True")
 
 # Get Anthropic API key with better error handling
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+
 
 if not ANTHROPIC_API_KEY or ANTHROPIC_API_KEY == "YOUR_ANTHROPIC_API_KEY_HERE":
     print("ERROR: Anthropic API key not found or not set!")
