@@ -1,11 +1,12 @@
 # File: togetherai_engine.py
 
+import os
 from together import Together
 import base64
 from mimetypes import guess_type
 
-# Replace with your actual Together AI API key
-TOGETHER_AI_API_KEY = "9590faae3ecdd6dd4936f410d33f4ed6e6ef08202f9b92109a66cbe34ed2bb4d"
+# Read the Together AI API key from the environment (see env_template.txt)
+TOGETHER_AI_API_KEY = os.environ.get("TOGETHER_API_KEY")
 
 
 # Choose a default model, e.g., "deepseek-3" or "deepseek-2.5"
