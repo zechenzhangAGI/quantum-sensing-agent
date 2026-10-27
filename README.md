@@ -2,6 +2,8 @@
 
 **A Claude-based agent that ran a room-temperature scanning-confocal NV-center experiment in the lab, February–June 2025.**
 
+📄 **Technical report:** [Quantum Sensing Agent: An LLM Agent that Operated a Scanning-Confocal NV-Center Experiment in Early 2025](docs/technical-report/qsa_technical_report.pdf) (Zhang, Xue, Fan, Yacoby). To our knowledge, this is among the earliest LLM agents to operate a quantum-sensing experiment: its first hardware session was on 18 February 2025.
+
 The agent wrote measurement configs, launched the instrument scripts, read the resulting plots and proposed next steps, while a researcher at the setup directed it and added physical judgment. It can also search its own past sessions, including their plots, through retrieval over earlier conversations.
 
 ![14 May 2025 session: galvo scan, find_nv, CW ESR](docs/figures/hero_2025-05-14.png)
@@ -108,7 +110,7 @@ June 2025 code failed to save embeddings on exit because of an ordering bug, fix
 
 Counts follow the technical report: a measurement is **completed** only if the toolkit's "saved data" line appears
 inside logged script output in [`projects/NVExperiment/runs/`](projects/NVExperiment/runs/). "Saved" lines that the
-LLM wrote inside its own replies (invented tool output) are excluded; an earlier count of 79 had included 7 of them.
+LLM wrote inside its own replies (invented tool output) are excluded; counting them would give 79 instead of 72 for Feb–May.
 
 - **18 Feb – 16 Jun 2025: 73 completed measurements in 16 sessions on 10 days** on the Yacoby-lab NV confocal setup
   (20 galvo scans, 27 `find_nv`, 8 `optimize`, 18 ESR); 72 of them in Feb–May.
@@ -164,6 +166,7 @@ projects/NVExperiment/
   runs/                     session archive: run_<timestamp>/{configs,logs}, Feb 2025 logs
   embeddings/               embedded past conversations (RAG memory)
 examples/2025-05-14-nv-odmr/  measured data of the 14 May 2025 session + figure script
+docs/technical-report/      technical report (PDF + LaTeX source)
 docs/figures/               README figure
 docs/dev-notes/             2025 development notes and task lists
 analysis/                   scripts that reproduce the technical report's counts and figures
@@ -177,8 +180,8 @@ If you use this code or data, please cite the technical report (arXiv ID to be a
 
 ```bibtex
 @misc{zhang2026quantumsensingagent,
-  title         = {Quantum Sensing Agent: A Language-Model Agent that Operated a Scanning-Confocal
-                   {NV}-Center Experiment, February--June 2025},
+  title         = {Quantum Sensing Agent: An {LLM} Agent that Operated a Scanning-Confocal
+                   {NV}-Center Experiment in Early 2025},
   author        = {Zhang, Zechen and Xue, Ruolan and Fan, Jack and Yacoby, Amir},
   year          = {2026},
   eprint        = {TBD},
