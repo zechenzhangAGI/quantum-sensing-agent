@@ -1,8 +1,19 @@
-.vscode
-b26_toolkit_for_agent/
-data/
+# Secrets
 .env
-venv/
-.DS_Store
+
+# Python
 __pycache__/
 *.pyc
+venv/
+.venv/
+
+# OS / editor
+.DS_Store
+.vscode
+
+# Measurement output written by the agent at run time (can be large)
+projects/*/runs/*/data/
+/data/
+
+# Lab control stack (not distributed with this repository)
+b26_toolkit_for_agent/

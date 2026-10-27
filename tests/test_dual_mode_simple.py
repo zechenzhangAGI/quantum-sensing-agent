@@ -42,7 +42,7 @@ def test_mode_logic():
     print("The dual-mode refactoring appears to be working correctly!")
     print("\nTo test the full functionality:")
     print("1. Set up your ANTHROPIC_API_KEY environment variable")
-    print("2. Run: python agent.py")
+    print("2. Run: python agent/agent.py (from the repository root)")
     print("3. Choose mode 1 (assistant) or 2 (auto) when prompted")
 
 if __name__ == "__main__":
