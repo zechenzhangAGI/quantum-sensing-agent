@@ -5,7 +5,10 @@ This script simulates a conversation with the agent and demonstrates the RAG fun
 """
 
 import os
+import sys
 import time
+# The agent modules live in agent/ and import each other by bare name
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "agent"))
 from agent import NVExperimentAgent
 
 def main():

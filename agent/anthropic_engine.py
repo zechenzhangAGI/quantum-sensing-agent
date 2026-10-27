@@ -7,8 +7,9 @@ import os
 import sys
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv(dotenv_path='C:\\Users\\NVAFM_6th_fl_2\\quantum-sensing-agent 0614\\quantum-sensing-agent\\agent\\.env',override="True")
+# Load environment variables from a .env file, searching upward from agent/
+# (so either agent/.env or a .env in the repository root is picked up)
+load_dotenv(override=True)
 
 # Get Anthropic API key with better error handling
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
