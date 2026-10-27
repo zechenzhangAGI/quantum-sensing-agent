@@ -17,13 +17,14 @@ NV confocal setup, Harvard (run `run_20250514_082859`, 08:28–11:53 local time)
    then CW ESR sweeps between 2.72 and 2.92 GHz at −8 or 0 dBm.
 4. Candidates 1 and 2 showed no clear resonance. The agent listed possible causes (microwave delivery,
    NV orientation and charge state). The researcher checked the microwave line and moved on.
-5. On candidate 3 a narrower sweep (2.85–2.89 GHz, 0 dBm, `esr_config_NV3_modified2.json`) shows dips of
-   about 2–3 % near 2.862 and 2.879 GHz, on either side of D = 2.87 GHz. The researcher logged "good we
+5. On candidate 3 a narrower sweep (2.85–2.89 GHz, 0 dBm, `esr_config_NV3_modified2.json`) shows two dips at
+   ≈2.863 and 2.878 GHz, on either side of D = 2.87 GHz. The researcher logged "good we
    see ESR, let's proceed to the next NV" (11:49:53).
 6. The session ended after `find_nv` on candidate 4.
 
 In total the agent launched 20 measurements in this session: 1 galvo scan, 9 find_nv, 3 optimize, 7 ESR.
-**No spectrum was fitted**: `fit_params` is `null` in every ESR JSON file.
+**No spectrum was fitted at the time**: `fit_params` is `null` in every ESR JSON file. A two-Lorentzian fit
+of the candidate-3 sweep, done afterwards, is in the technical report (and `analysis/scripts/esr_fit.py`).
 
 ## Run → file map
 

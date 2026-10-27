@@ -1,0 +1,48 @@
+{
+  "scripts": {
+    "optimize": {
+      "class": "OptimizeNV",
+      "filepath": "C:\\Users\\NVAFM_6th_fl_2\\NV-Automation\\b26_toolkit_for_agent\\b26_toolkit-master\\b26_toolkit\\scripts\\optimize_nv.py",
+      "info": "Script to optimize the position of an NV center",
+      "instruments": {
+        "NI6353": {
+          "class": "NI6353",
+          "settings": {
+            "device": "Dev1"
+          }
+        },
+        "PB": {
+          "class": "LISE607RTPulseBlaster",
+          "settings": {}
+        }
+      },
+      "settings": {
+        "initial_point": {
+          "x": -3.0,
+          "y": 2.0
+        },
+        "pathway": "nelder_mead",
+        "time_per_pt": 0.01,
+        "settle_time": 0.0002,
+        "max_counts_plot": -1,
+        "min_counts_plot": -1,
+        "DAQ_channels": {
+          "x_ao_channel": "ao0",
+          "y_ao_channel": "ao1",
+          "counter_channel": "ctr0"
+        },
+        "ending_behavior": "return_to_start",
+        "daq_type": "PCI",
+        "optimize_z": false,
+        "z_min": -0.5,
+        "z_max": 0.5,
+        "z_points": 10,
+        "z_settling_time": 0.1,
+        "tolerance": 0.0001,
+        "maximum_iterations": 30,
+        "time_constant": 200,
+        "save_optimization_path": true
+      }
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "scripts": {
+    "find_nv": {
+      "class": "FindNV",
+      "filepath": "C:\\Users\\NVAFM_6th_fl_2\\NV-Automation\\b26_toolkit_for_agent\\b26_toolkit-master\\b26_toolkit\\scripts\\find_nv.py",
+      "info": "Script to locate first NV center from galvo scan",
+      "settings": {
+        "initial_point": {
+          "x": -3.0,
+          "y": -2.5
+        },
+        "sweep_range": 0.5,
+        "num_points": 61,
+        "nv_size": 21,
+        "min_mass": 80,
+        "number_of_attempts": 1,
+        "center_on_current_location": true
+      },
+      "instruments": {}
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "scripts": {
+    "esr_RnS": {
+      "class": "ESR",
+      "filepath": "C:\\Users\\NVAFM_6th_fl_2\\NV-Automation\\b26_toolkit_for_agent\\b26_toolkit-master\\b26_toolkit\\scripts\\esr_RnS.py",
+      "info": "ESR measurement script using R&S microwave generator",
+      "instruments": {
+        "microwave_generator": {
+          "class": "R8SMicrowaveGenerator",
+          "settings": {
+            "VISA_address": "TCPIP0::192.168.1.100::inst0::INSTR"
+          }
+        },
+        "NI6353": {
+          "class": "NI6353",
+          "settings": {}
+        },
+        "PB": {
+          "class": "LISE607RTPulseBlaster",
+          "settings": {}
+        }
+      },
+      "settings": {
+        "power_out": -8.0,
+        "esr_avg": 100,
+        "freq_start": 2900000000.0,
+        "freq_stop": 2950000000.0,
+        "range_type": "start_stop",
+        "freq_points": 100,
+        "integration_time": 0.05,
+        "num_samps_per_pt": 100,
+        "mw_generator_switching_time": 0.01,
+        "turn_off_after": true,
+        "norm_to_ref": true,
+        "save_full_esr": true,
+        "daq_type": "PCI",
+        "fit_constants": {
+          "num_of_peaks": -1,
+          "minimum_counts": 0.9,
+          "contrast_factor": 3.0,
+          "zfs": 2870000000.0,
+          "gama": 2802800.0
+        },
+        "track_laser_power": {
+          "on/off": false,
+          "ai_channel": "ai4"
+        }
+      }
+    }
+  }
+}

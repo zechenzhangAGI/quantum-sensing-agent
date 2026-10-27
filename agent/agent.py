@@ -1101,14 +1101,14 @@ You have the following constraints and abilities:
             print(f"[Embeddings] Invalid chunk_size ({self.embedding_chunk_size}) or chunk_overlap ({self.embedding_chunk_overlap}). Skipping.")
             return
 
+        # Filter out RAG search results from conversation history before chunking
+        # (RAG results are already from past conversations, no need to re-embed them)
+        conversation_for_embedding = [turn for turn in self.conversation_history if turn["role"] != "rag_search_result"]
+
         step = self.embedding_chunk_size - self.embedding_chunk_overlap
         print(f"[Embeddings] Preparing to save conversation with {len(self.conversation_history)} turns ({len(conversation_for_embedding)} for embedding after filtering RAG results) in overlapping chunks of size {self.embedding_chunk_size} with a step of {step}.")
         self._log("embeddings", f"Saving conversation with {len(self.conversation_history)} turns ({len(conversation_for_embedding)} for embedding) in overlapping chunks of size {self.embedding_chunk_size}, step {step}.")
 
-        # Filter out RAG search results from conversation history before chunking
-        # (RAG results are already from past conversations, no need to re-embed them)
-        conversation_for_embedding = [turn for turn in self.conversation_history if turn["role"] != "rag_search_result"]
-        
         chunk_index = 0
         for i in range(0, len(conversation_for_embedding), step):
             chunk = conversation_for_embedding[i:i + self.embedding_chunk_size]

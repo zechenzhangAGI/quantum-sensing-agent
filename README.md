@@ -1,17 +1,17 @@
 # Quantum Sensing Agent
 
-**A Claude-based agent that ran a room-temperature scanning-confocal NV-center experiment in the lab, February–May 2025.**
+**A Claude-based agent that ran a room-temperature scanning-confocal NV-center experiment in the lab, February–June 2025.**
 
-The agent wrote measurement configs, launched the instrument scripts, looked at the resulting plots, and decided the next step. A researcher stood at the setup, granted each action, and added physical judgment. The agent also recalled earlier sessions, including their plots, through retrieval over its own past conversations.
+The agent wrote measurement configs, launched the instrument scripts, read the resulting plots and proposed next steps, while a researcher at the setup directed it and added physical judgment. It can also search its own past sessions, including their plots, through retrieval over earlier conversations.
 
 ![14 May 2025 session: galvo scan, find_nv, CW ESR](docs/figures/hero_2025-05-14.png)
 
 *14 May 2025, one session run by the agent ([`examples/2025-05-14-nv-odmr/`](examples/2025-05-14-nv-odmr/)).
 (1) Galvo scan of the field of view. The researcher read six candidate spots off this image.
 (2) `find_nv` zoomed scan on candidate 3. (3) CW ESR (optically detected magnetic resonance) on candidate 3,
-re-plotted from the saved data: dips of about 2–3 % near 2.862 and 2.879 GHz, on either side of the zero-field
+re-plotted from the saved data: two dips at ≈2.863 and 2.878 GHz, on either side of the zero-field
 splitting D = 2.87 GHz. The researcher logged "good we see ESR". Panels 1–2 are the lab toolkit's own renderings.
-No fit is applied.*
+This figure shows the raw data; a two-Lorentzian fit is in the technical report.*
 
 ---
 
@@ -24,8 +24,9 @@ No fit is applied.*
   (never keys), and saves a new config in the current run folder.
 - **Reads its own plots.** After each measurement it can send the saved PNG and the recent conversation
   to Claude's vision input, and plan the next step from what it sees.
-- **Remembers past sessions.** Conversations are embedded at exit. The agent can search them (`rag_search`)
-  and reopen the plots those sessions referred to.
+- **Can search past sessions.** Conversations are embedded at exit. The agent can search them (`rag_search`)
+  and reopen the plots those sessions referred to. In the logged hardware sessions, retrieval did not measurably
+  change the agent's behaviour.
 - **Logs everything.** Each session gets `projects/NVExperiment/runs/run_<timestamp>/{configs,data,logs}`
   with a timestamped log of user messages, the agent's reasoning, actions, permissions and script output.
 
@@ -81,13 +82,14 @@ Two modes are chosen at start-up:
 |---|---|---|
 | `write`, `run`, `vision` | Each needs an explicit `yes` from the researcher. A refusal is logged and fed back to the agent | Granted automatically and logged as `AUTO MODE - PROCEEDING` |
 | Loop | One action, then wait for the researcher | Continues until it sends a `message`, or stops after 10 steps |
-| Intended use | Running real hardware with a person at the setup | Supervised runs once the workflow is trusted |
+| Intended use | Running real hardware with a person at the setup | Supervised runs once the workflow is trusted (see the 16 June 2025 test below) |
 
 In both modes only the **first** action of a turn is executed. The script allow-list, the fixed command format,
 and the folder restrictions apply in both modes.
 
-> **History of the modes.** The Feb–May 2025 hardware sessions used the earlier agent, which asked for
-> permission before each action, as assistant mode does now. The two modes and the one-action-per-turn rule were added in June 2025.
+> **History of the modes.** The Feb–Apr 2025 sessions asked permission per action, as assistant mode does now;
+> the 14 May version did not log permission prompts. The two modes and the one-action-per-turn rule were added in
+> June 2025, and the only hardware session with them (16 June 2025) ran in auto mode.
 
 ## Memory of past sessions
 
@@ -98,30 +100,35 @@ When a session ends (by `exit`, Ctrl-C or an error), the conversation is split i
 During a new session the agent can call `rag_search` when it is stuck or wants precedent. The query is built from
 the recent conversation. The top matches are inserted in a clearly delimited *"relevant context from past
 experiments"* block, and the agent can reopen the historical plots they reference with `vision`. In this way a
-researcher's advice from an earlier session can shape decisions in a later one. The embeddings of the May 2025
-sessions are included in the repository.
+researcher's advice from an earlier session could shape decisions in a later one; in the logged hardware sessions
+this did not happen measurably. The embeddings of the May 2025 sessions are included in the repository. (The
+June 2025 code failed to save embeddings on exit because of an ordering bug, fixed in this release.)
 
 ## Deployment record
 
-All counts are from the session logs in [`projects/NVExperiment/runs/`](projects/NVExperiment/runs/).
+Counts follow the technical report: a measurement is **completed** only if the toolkit's "saved data" line appears
+inside logged script output in [`projects/NVExperiment/runs/`](projects/NVExperiment/runs/). "Saved" lines that the
+LLM wrote inside its own replies (invented tool output) are excluded; an earlier count of 79 had included 7 of them.
 
-- **18 Feb – 14 May 2025: 79 completed measurements on 9 days** on the Yacoby-lab NV confocal setup
-  (19 galvo scans, 28 `find_nv`, 10 `optimize`, 22 ESR). A measurement counts as completed when the
-  log shows the toolkit's output and its "saved data" line.
+- **18 Feb – 16 Jun 2025: 73 completed measurements in 16 sessions on 10 days** on the Yacoby-lab NV confocal setup
+  (20 galvo scans, 27 `find_nv`, 8 `optimize`, 18 ESR); 72 of them in Feb–May.
 
-  | Date (2025) | 18 Feb | 19 Feb | 28 Feb | 1 Mar | 6 Mar | 11 Mar | 12 Mar | 19 Apr | 14 May |
-  |---|---|---|---|---|---|---|---|---|---|
-  | Measurements | 2 | 9 | 7 | 8 | 1 | 9 | 8 | 11 | 24 |
+  | Date (2025) | 18 Feb | 19 Feb | 28 Feb | 1 Mar | 6 Mar | 11 Mar | 12 Mar | 19 Apr | 14 May | 16 Jun |
+  |---|---|---|---|---|---|---|---|---|---|---|
+  | Measurements | 2 | 9 | 7 | 8 | 1 | 4 | 7 | 10 | 24 | 1 |
 
-- **19 Apr and 14 May 2025:** full galvo → find_nv → optimize → ESR chains. On 14 May the agent worked through
-  four of six candidates and found ESR dips on candidate 3 (figure above). Its data are in
-  [`examples/2025-05-14-nv-odmr/`](examples/2025-05-14-nv-odmr/).
-- **16 Jun 2025:** a short auto-mode test on the setup. One galvo scan reached the instrument; the next run
-  attempts (optimize, ESR) failed with script errors.
-- Most other spectra show no clear resonance, and none was fitted.
+- **19 Apr and 14 May 2025:** galvo → find_nv → optimize → ESR chains, with the researcher choosing candidates and
+  frequency windows. On 14 May the agent worked through candidates 1–3 of six and reached candidate 4; ESR dips
+  appeared on candidate 3 (figure above). Its data are in [`examples/2025-05-14-nv-odmr/`](examples/2025-05-14-nv-odmr/).
+- **16 Jun 2025:** a short unsupervised auto-mode test. One galvo scan reached the instrument; the next run
+  attempts (optimize, ESR) failed. The model also wrote invented script output into its own replies (fake
+  find_nv, optimize and ESR results, including "ESR transitions found"), which the log makes visible, and then
+  reasoned from those invented results.
+- Most other spectra show no clear resonance, and none was fitted at the time.
 
 The 18–19 Feb logs are `projects/NVExperiment/runs/agent_history*.log`. The `data/` output folders were not
-committed, except for the 14 May data in `examples/`.
+committed, except for the 14 May data in `examples/`. The scripts that reproduce every count are in
+[`analysis/`](analysis/).
 
 ## Quickstart
 
@@ -141,8 +148,9 @@ python agent/agent.py         # run from the repository root; choose 1 (assistan
 - The agent was deployed on Windows: its `run` action calls the Windows `py` launcher with `\` paths.
 - **Without the hardware** you can still chat with the agent, have it read and write configs, search past
   sessions, and run vision on plots already in a run folder. `run` will fail.
-- Offline test (no API key, no hardware): `python -m pytest tests/`. The other scripts in `tests/` need an
+- Offline test (no API key, no hardware): `pip install pytest`, then `python -m pytest tests/`. The other scripts in `tests/` need an
   API key and are run directly from the root (e.g. `python tests/test_rag.py`).
+- On first use, `sentence-transformers` downloads the `all-MiniLM-L6-v2` model (about 90 MB) from Hugging Face.
 - Models default to Claude 3.5 Sonnet (text) and Claude 3.7 Sonnet (vision). Override them with
   `DEFAULT_MODEL` / `SONNET_NEW` in `.env`.
 
@@ -158,6 +166,7 @@ projects/NVExperiment/
 examples/2025-05-14-nv-odmr/  measured data of the 14 May 2025 session + figure script
 docs/figures/               README figure
 docs/dev-notes/             2025 development notes and task lists
+analysis/                   scripts that reproduce the technical report's counts and figures
 tests/                      test scripts
 env_template.txt            template for .env (API keys)
 ```
@@ -169,7 +178,7 @@ If you use this code or data, please cite the technical report (arXiv ID to be a
 ```bibtex
 @misc{zhang2026quantumsensingagent,
   title         = {Quantum Sensing Agent: A Language-Model Agent that Operated a Scanning-Confocal
-                   {NV}-Center Experiment, February--May 2025},
+                   {NV}-Center Experiment, February--June 2025},
   author        = {Zhang, Zechen and Xue, Ruolan and Fan, Jack and Yacoby, Amir},
   year          = {2026},
   eprint        = {TBD},
