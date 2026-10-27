@@ -1,11 +1,10 @@
-#deepseek API key: sk-420e50c5cfd347a38f3cc53bb41acde0
-
+import os
 import openai
 import base64
 from mimetypes import guess_type
 
-# Replace with your actual DeepSeek API key
-DEEPSEEK_API_KEY = "sk-420e50c5cfd347a38f3cc53bb41acde0"
+# Read the DeepSeek API key from the environment
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 
 # Configure the OpenAI SDK to use DeepSeek's API endpoint and your API key
 openai.api_key = DEEPSEEK_API_KEY
