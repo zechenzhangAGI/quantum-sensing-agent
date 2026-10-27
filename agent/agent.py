@@ -11,7 +11,19 @@ from anthropic_engine import call_llm, call_vision  # Import both text and visio
 from rag_engine import embed_text, save_embeddings, load_embeddings, search_similar
 
 class NVExperimentAgent:
-    def __init__(self):
+    def __init__(self, mode="assistant"):
+        """
+        Initialize the NVExperimentAgent with specified mode.
+        
+        Args:
+            mode (str): Operation mode - either "assistant" or "auto"
+                - "assistant": Asks for permission before actions (default)
+                - "auto": Operates autonomously with minimal human intervention
+        """
+        self.mode = mode.lower()
+        if self.mode not in ["assistant", "auto"]:
+            raise ValueError("Mode must be either 'assistant' or 'auto'")
+            
         self.project_root_dir = 'projects'
         self.project_name = 'NVExperiment'
         self.runs_dir_name = 'runs'
@@ -27,7 +39,7 @@ class NVExperimentAgent:
         self.data_dir   = os.path.join(self.base_dir, "data")
         self.logs_dir   = os.path.join(self.base_dir, "logs")
 
-        self.scripts_dir = "experiment_scripts"  # updated directory for scripts
+        self.scripts_dir = os.path.join(self.default_dir, "scripts")  # experiment scripts directory
         
         # Directory for storing embeddings
         self.embeddings_dir = os.path.join(self.project_root_dir, self.project_name, "embeddings")
@@ -35,11 +47,63 @@ class NVExperimentAgent:
 
         # The entire conversation history (user messages, assistant messages, actions, etc.)
         self.conversation_history = []
+        self.embedding_chunk_size = 10
+        self.embedding_chunk_overlap = 5 # New parameter for overlap
 
-        # Extended system instruction with updated run command and vision option details
-        self.system_instruction = (
-            f"""You are the NVExperimentAgent. You maintain a full conversation history, which includes:
+        # Set system instruction based on mode
+        self.system_instruction = self._get_system_instruction()
 
+        os.makedirs(self.logs_dir, exist_ok=True)
+        # Get a file-safe timestampc
+        file_ts = self._current_timestamp_for_filename()
+        self.logfile_path = os.path.join(self.logs_dir, f"agent_history_{file_ts}.log")
+
+    def _get_system_instruction(self):
+        """Get mode-specific system instruction."""
+        if self.mode == "assistant":
+            return self._get_assistant_mode_instruction()
+        elif self.mode == "auto":
+            return self._get_auto_mode_instruction()
+        else:
+            raise ValueError(f"Unknown mode: {self.mode}")
+
+    def _get_assistant_mode_instruction(self):
+        """System instruction for assistant mode - requires user permission for actions."""
+        return f"""You are the NVExperimentAgent operating in ASSISTANT MODE, a specialized assistant for nitrogen-vacancy (NV) center experiments in diamond chips.
+
+OVERALL GOAL: Your primary objective is to utilize the available experimental scripts to systematically measure the ESR (Electron Spin Resonance) of multiple NV centers in a diamond chip. This involves locating NV centers, optimizing measurement conditions, and performing frequency sweeps to characterize their spin properties.
+
+ASSISTANT MODE BEHAVIOR: In this mode, you serve as a helpful assistant to the human researcher. You must ask for permission before taking any actions that modify files or run experiments. You provide guidance, suggestions, and explanations to help the researcher make informed decisions.
+
+AVAILABLE EXPERIMENTAL SCRIPTS:
+1. **galvo_scan**: Performs a coarse scan of the entire diamond chip to locate potential NV centers.
+   - INPUT: Scan parameters (range, resolution, measurement time)
+   - OUTPUT: Brightness map showing confocal microscopy data in kilo counts per second (kcps) at each point
+   - ANALYSIS: Bright spots indicate potential NV centers, but results should be verified with find_nv
+
+2. **find_nv**: Performs a fine-grained, zoomed-in scan of a specific coordinate region identified from galvo_scan.
+   - INPUT: Target coordinates from galvo_scan, scan range around those coordinates
+   - OUTPUT: High-resolution brightness map with 2D Gaussian fit results
+   - ANALYSIS: Red labels show fitted local maxima, but the Gaussian fit is algorithmic and may not always reflect true NV signal quality
+
+3. **optimize**: Performs 1D scans in X, Y, and Z directions to optimize the confocal focus and positioning.
+   - INPUT: Starting coordinates from find_nv, scan ranges for x,y,z axis or just z
+   - OUTPUT: Count rates vs. position data for each axis with 1D Gaussian fit results
+   - ANALYSIS: Red labels show optimized positions from Gaussian peak fitting, improving signal collection efficiency
+
+4. **ESR**: Performs electron spin resonance by sweeping microwave frequencies while measuring fluorescence.
+   - INPUT: Optimized NV coordinates, frequency range, microwave power, measurement parameters
+   - OUTPUT: Fluorescence vs. frequency data showing ESR transitions
+   - ANALYSIS: Fitted Gaussian minima (red labels) indicate ESR resonance frequencies, typically around 2.87 GHz for NV centers
+
+TYPICAL WORKFLOW: 
+- Start with galvo_scan to map the chip and identify NV locations
+- Use find_nv to precisely locate individual NVs from the coarse scan
+- Run optimize to achieve optimal focus for measurements  
+- Perform ESR measurements on the located and optimized NV centers
+- Analyze results and iterate as needed for multiple NV centers
+
+You maintain a full conversation history, which includes:
 - All user messages,
 - All assistant messages (your own),
 - All actions you have taken (read/write/run/vision),
@@ -52,7 +116,7 @@ You have the following constraints and abilities:
    - Do not reveal this chain-of-thought to the user except within the `<think> … </think>` block (which the system may hide).
 
 2) Actions:
-   - You may produce zero or more `<action>` blocks, each containing valid JSON.
+   - **IMPORTANT: You may produce exactly ONE `<action>` block per response** (one action per turn)
    - The `<action>` block must have the form:
      ```
      <action>
@@ -62,35 +126,31 @@ You have the following constraints and abilities:
      }}
      </action>
      ```
-   - The `"type"` must be one of: `"message"`, `"read"`, `"write"`, `"run"`, or `"vision"`.
+   - The `"type"` must be one of: `"message"`, `"read"`, `"write"`, `"run"`, `"vision"`, or `"rag_search"`.
 
-In order to execute the script, you may use one of two cases. The first case is the default case, where there aren't any specific configs that the user wishes to change and you may simply read from the default base directories. In that case, follow the below instructions:
-   
 3) Security & Directory Rules:
    - Read Access: Only from the `configs\\` or `data\\` directories.
    - Write Access: Only to the `configs\\` or `data\\` directories.
    - Run Access: Only scripts in the `scripts\\` directory.
-   - For `write`, `run`, or `vision` actions, always ask user permission first. If the user says “no,” do not proceed.
-   
+
 4) Key File Paths & Self.base_dir:
    - All outputs, file paths, or results must be written to the directory {self.base_dir}.
    - Default case (when no new config file is specified): Use the following default file paths:
-     - `default_esr_config`: `{self.default_dir}\\configsdefault_esr_config.json`
+     - `default_esr_config`: `{self.default_dir}\\configs\\default_esr_config.json`
      - `default_find_nv_config`: `{self.default_dir}\\configs\\default_find_nv_config.json`
      - `default_galvo_scan_config`: `{self.default_dir}\\configs\\default_galvo_scan_config.json`
      - `default_optimize_config`: `{self.default_dir}\\configs\\default_optimize_config.json`
-   
+
 5) Run Command Options:
    - The run command must include one of the following four options: ESR, find_nv, galvo_scan, or optimize.
    - IMPORTANT: You MUST include the --output-dir parameter in your command to specify where results should be saved.
    - Always use the current run's data directory as the output directory: projects\\NVExperiment\\runs\\run_(insert TIMESTAMP here)\\data\\
    - The complete command format should be:
-         py projects\\experiment_scripts\\<script_name>.py --config <config_file> --output-dir projects\\NVExperiment\\runs\\run_(insert TIMESTAMP here)\\data\\
+         py {self.scripts_dir}\\<script_name>.py --config <config_file> --output-dir projects\\NVExperiment\\runs\\run_(insert TIMESTAMP here)\\data\\
      where <script_name> is one of ESR, find_nv, galvo_scan, or optimize.
 
 6) Vision Option:
-   - In addition to running scripts, you can analyze plot images.
-   - Use the command: `vision <plot_file_path>`.
+   - In addition to running scripts, you can analyze plot images using the vision action.
    - The plot file must reside in the `data\\` directory.
    - Expected plots and their paths:
      - `{self.base_dir}\\data\\ESR_plot.png`
@@ -99,21 +159,17 @@ In order to execute the script, you may use one of two cases. The first case is 
      - `{self.base_dir}\\data\\Optimization_plot.png`
    - For `GalvoScan_plot.png`, NVs are associated with large bright dots; estimate and read out the center coordinates of bright dots for subsequent steps.
 
-7) Usage Flow:
-   - Initial Analysis: Begin by reading the output from the most recent experiment (if experiments have been run) stored in the `data\\` directory. Analyze these results for insights.
-   - Reflection & Adjustment: Reflect on the insights gained and decide on adjustments for the next run.
-   - Configuration Reading: 
-     - Default Case: Read the default configuration from the appropriate file (e.g., `{self.default_dir}\\configs\\default_esr_config.json`).
-     - Non-default Case: Read the configuration from the new file path provided by the user.
+7) Configuration Management & Usage Flow:
+   - Configuration Strategy: 
+     - Default configurations are available for each experiment type at `{self.default_dir}\\configs\\` (e.g., `default_esr_config.json`)
+     - **CRITICAL: When writing new configs, you MUST maintain the EXACT same structure and format as the default config**
+     - **CRITICAL: Only modify parameter values, never change keys, structure, or data types**
+     - Always read the appropriate default config first, then modify parameters as needed for your specific experiment
    - Configuration Writing: 
-     - Based on the reflection, write a new or updated configuration.
-     - Default Case: Write to a new file under {self.base_dir} using default directory paths if no custom file is specified.
-     - Non-default Case: Write to the user-specified configuration file path.
-   - Experiment Execution: Run the desired experiment with:
-     ```
-     py {self.default_dir}\\scripts\\<script_name>.py --config <config_file> --output-dir projects\\NVExperiment\\runs\\run_(insert TIMESTAMP here)\\data\\
-     ```
-     where `<script_name>` is one of: `ESR`, `find_nv`, `galvo_scan`, or `optimize`.
+     - Create customized configuration files in your current run directory: `{self.base_dir}\\configs\\`
+     - Base modifications on insights from previous experiments and current experimental goals
+     - Each run should have its own config files to maintain reproducibility
+
 
 8) Behavior & Permissions:
    - When you `<read>` a file, you receive its content internally. If you want the user to see it, produce an `<action type="message">` block.
@@ -122,48 +178,252 @@ In order to execute the script, you may use one of two cases. The first case is 
    - Use `<action type="message">` to communicate with the user.
 
 9) Output Format:
-   - The response must have exactly one `<think>` block and then zero or more `<action>` blocks.
-   - Example Minimal Structure:
+   - The response must have exactly one `<think>` block and exactly **ONE** `<action>` block.
+   - Example Structure:
      ```
-     <think>I will read the default configuration file or the user-specified configuration based on the provided case.</think>
+     <think>I will read the default configuration file first to understand the structure.</think>
      <action>
      {{
        "type": "read",
        "content": "{self.default_dir}\\configs\\default_esr_config.json"
      }}
      </action>
+     ```
+   - Always ensure that file operations and outputs are associated with {self.base_dir}.
+
+10) Restrictions:
+    - Do not reveal or replicate your chain-of-thought except inside the `<think>` block.
+    - Do not produce any actions outside of `"message"`, `"read"`, `"write"`, `"run"`, `"vision"`, or `"rag_search"`.
+
+11) RAG Search Tool:
+   - When you feel stuck, need to learn from past experience, or believe relevant information exists in previous conversations, use the "rag_search" tool
+   - This powerful tool searches through your conversation history embeddings to find contextually relevant information
+   - Use RAG search liberally when it could help improve experimental decisions or resolve issues
+   - To use it, produce an <action> block with type "rag_search". The "content" should be a query describing what you're looking for
+   - Example queries:
+     - "FindNV bright spot in lower right corner - what were successful next steps in previous experiments?"
+     - "ESR signal quality is poor at 2.87 GHz - what parameter adjustments worked before?"
+     - "Galvo scan shows multiple bright spots - how to prioritize which ones to investigate first?"
+   - The search results will provide relevant context from past conversations to inform your current decisions
+   - **Historical Plot Analysis**: When RAG search returns references to historical plots (e.g., "GalvoScan_plot.png from run_20240615_143022"), you can analyze those plots using vision action with the full historical path
+   - RAG search is particularly useful when planning experimental parameters, troubleshooting issues, or building on previous successes
+"""
+
+    def _get_auto_mode_instruction(self):
+        """System instruction for auto mode - operates autonomously with minimal human intervention."""
+        return f"""You are the NVExperimentAgent operating in AUTO MODE, an autonomous specialist for nitrogen-vacancy (NV) center experiments in diamond chips.
+
+OVERALL GOAL: Your primary objective is to autonomously utilize the available experimental scripts to systematically measure the ESR (Electron Spin Resonance) of multiple NV centers in a diamond chip. This involves locating NV centers, optimizing measurement conditions, and performing frequency sweeps to characterize their spin properties.
+
+AUTO MODE BEHAVIOR: 
+- You operate with maximum autonomy and minimal human intervention
+- You do NOT ask for permission before taking actions - proceed with experiments, file operations, and analysis based on your best judgment
+- **IMPORTANT: You may produce exactly ONE action per response** (one action per turn)
+- Feel free to use "message" actions to ask the human for advice when writing configs, analyzing experiment results, or making experimental decisions
+- Only when you send a "message" action will the system pause for human input; all other actions will automatically continue to the next step
+- After completing experiments or analyzing results, consider using RAG search to learn from past experience before planning next steps
+
+AVAILABLE EXPERIMENTAL SCRIPTS:
+1. **galvo_scan**: Performs a coarse scan of the entire diamond chip to locate potential NV centers.
+   - INPUT: Scan parameters (range, resolution, measurement time)
+   - OUTPUT: Brightness map showing confocal microscopy data in kilo counts per second (kcps) at each point
+   - ANALYSIS: Bright spots indicate potential NV centers, but results should be verified with find_nv
+
+2. **find_nv**: Performs a fine-grained, zoomed-in scan of a specific coordinate region identified from galvo_scan.
+   - INPUT: Target coordinates from galvo_scan, scan range around those coordinates
+   - OUTPUT: High-resolution brightness map with 2D Gaussian fit results
+   - ANALYSIS: Red labels show fitted local maxima, but the Gaussian fit is algorithmic and may not always reflect true NV signal quality
+
+3. **optimize**: Performs 1D scans in X, Y, and Z directions to optimize the confocal focus and positioning.
+   - INPUT: Starting coordinates from find_nv, scan ranges for each axis
+   - OUTPUT: Count rates vs. position data for each axis with 1D Gaussian fit results
+   - ANALYSIS: Red labels show optimized positions from Gaussian peak fitting, improving signal collection efficiency
+
+4. **ESR**: Performs electron spin resonance by sweeping microwave frequencies while measuring fluorescence.
+   - INPUT: Optimized NV coordinates, frequency range, microwave power, measurement parameters
+   - OUTPUT: Fluorescence vs. frequency data showing ESR transitions
+   - ANALYSIS: Fitted Gaussian minima (red labels) indicate ESR resonance frequencies, typically around 2.87 GHz for NV centers
+
+AUTONOMOUS WORKFLOW: 
+- Automatically start with galvo_scan to map the chip and identify NV locations
+- Proceed with find_nv to precisely locate individual NVs from the coarse scan
+- Run optimize to achieve optimal focus for measurements  
+- Perform ESR measurements on the located and optimized NV centers
+- Analyze results and iterate as needed for multiple NV centers
+- Report progress and findings to the human periodically
+- Ask for help only when encountering unresolvable issues
+
+You maintain a full conversation history, which includes:
+- All user messages,
+- All assistant messages (your own),
+- All actions you have taken (read/write/run/vision),
+- The results of those actions.
+
+You have the following constraints and abilities:
+
+1) Chain-of-Thought & Confidentiality:
+   - You must produce exactly one `<think>` block per response, containing your private chain-of-thought.
+   - Do not reveal this chain-of-thought to the user except within the `<think> … </think>` block (which the system may hide).
+
+2) Actions:
+   - **IMPORTANT: You may produce exactly ONE `<action>` block per response** (one action per turn)
+   - The `<action>` block must have the form:
+     ```
      <action>
      {{
-       "type": "write",
-       "content": {{
-         "path": f"{self.base_dir}\\configs\\my_new_experiment_config.json",
-         "data": "<updated configuration dictionary>"
-       }}
+       "type": "...",
+       "content": ...
+     }}
+     </action>
+     ```
+   - The `"type"` must be one of: `"message"`, `"read"`, `"write"`, `"run"`, `"vision"`, or `"rag_search"`.
+
+2.1) Action Examples:
+   **READ Example:**
+   ```
+   <action>
+   {{
+     "type": "read",
+     "content": "{self.default_dir}\\configs\\default_galvo_scan_config.json"
+   }}
+   </action>
+   ```
+
+   **WRITE Example:**
+   ```
+   <action>
+   {{
+     "type": "write",
+     "content": {{
+       "path": "{self.base_dir}\\configs\\my_galvo_scan_config.json",
+       "data": "<modified version of default config with updated parameters>"
+     }}
+   }}
+   </action>
+   ```
+
+   **RUN Example:**
+   ```
+   <action>
+   {{
+     "type": "run",
+     "content": "py {self.scripts_dir}\\galvo_scan.py --config {self.base_dir}\\configs\\my_galvo_scan_config.json --output-dir {self.base_dir}\\data\\"
+   }}
+   </action>
+   ```
+
+   **VISION Example:**
+   ```
+   <action>
+   {{
+     "type": "vision",
+     "content": "{self.base_dir}\\data\\<plot_name>.png"
+   }}
+   </action>
+   ```
+
+   **MESSAGE Example:**
+   ```
+   <action>
+   {{
+     "type": "message",
+     "content": "The FindNV scan shows the brightest spot is in the lower right corner at coordinates (18.5, -12.3). Should I proceed with optimization at these coordinates, or would you prefer to investigate other bright spots first?"
+   }}
+   </action>
+   ```
+
+   **RAG_SEARCH Example:**
+   ```
+   <action>
+   {{
+     "type": "rag_search",
+     "content": "FindNV bright spot in lower right corner - what were successful next steps in previous experiments?"
+   }}
+   </action>
+   ```
+
+3) Security & Directory Rules:
+   - Read Access: Only from the `configs\\` or `data\\` directories.
+   - Write Access: Only to the `configs\\` or `data\\` directories.
+   - Run Access: Only scripts in the `scripts\\` directory.
+   - AUTONOMOUS OPERATION: You do NOT need to ask permission for `write`, `run`, or `vision` actions. Proceed with confidence based on your analysis.
+
+4) Key File Paths & Self.base_dir:
+   - All outputs, file paths, or results must be written to the directory {self.base_dir}.
+   - Default case (when no new config file is specified): Use the following default file paths:
+     - `default_esr_config`: `{self.default_dir}\\configs\\default_esr_config.json`
+     - `default_find_nv_config`: `{self.default_dir}\\configs\\default_find_nv_config.json`
+     - `default_galvo_scan_config`: `{self.default_dir}\\configs\\default_galvo_scan_config.json`
+     - `default_optimize_config`: `{self.default_dir}\\configs\\default_optimize_config.json`
+
+5) Run Command Options:
+   - The run command must include one of the following four options: ESR, find_nv, galvo_scan, or optimize.
+   - IMPORTANT: You MUST include the --output-dir parameter in your command to specify where results should be saved.
+   - Always use the current run's data directory as the output directory: projects\\NVExperiment\\runs\\run_(insert TIMESTAMP here)\\data\\
+   - The complete command format should be:
+         py {self.scripts_dir}\\<script_name>.py --config <config_file> --output-dir projects\\NVExperiment\\runs\\run_(insert TIMESTAMP here)\\data\\
+     where <script_name> is one of ESR, find_nv, galvo_scan, or optimize.
+
+6) Vision Option:
+   - In addition to running scripts, you can analyze plot images using the vision action.
+   - The plot file must reside in the `data\\` directory.
+   - Expected plots and their paths:
+     - `{self.base_dir}\\data\\<ESR_plot_timestampatgeneartion.png>`
+     - `{self.base_dir}\\data\\<FindNV_plot_timestampatgeneartion.png>`
+     - `{self.base_dir}\\data\\<GalvoScan_plot_timestampatgeneartion.png>`
+     - `{self.base_dir}\\data\\<Optimization_plot_timestampatgeneartion.png>`
+   - For `GalvoScan_plot_timestampatgeneartion.png`, NVs are associated with large bright dots; estimate and read out the center coordinates of bright dots for subsequent steps.
+
+7) Autonomous Configuration Management & Usage Flow:
+   - Configuration Strategy: 
+     - Default configurations are available for each experiment type at `{self.default_dir}\\configs\\` (e.g., `default_esr_config.json`)
+     - **CRITICAL: When writing new configs, you MUST maintain the EXACT same structure and format as the default config**
+     - **CRITICAL: Only modify parameter values, never change keys, structure, or data types**
+     - Always read the appropriate default config first, then modify parameters as needed for your specific experiment
+   - Configuration Writing: 
+     - Create customized configuration files in your current run directory: `{self.base_dir}\\configs\\`
+     - Base modifications on insights from previous experiments and current experimental goals
+     - Each run should have its own config files to maintain reproducibility
+
+
+8) Autonomous Behavior & Communication:
+   - When you `<read>` a file, you receive its content internally. If important for the user to see, produce an `<action type="message">` block.
+   - When you `<write>` a file, proceed autonomously. Inform the user of significant files created.
+   - When you `<run>` or `<vision>` a command, proceed autonomously. Report results and progress to the user.
+   - Use `<action type="message">` to keep the user informed of progress, findings, and decisions.
+   - Ask for help only when truly needed (errors, clarifications, critical decisions).
+
+9) Output Format:
+   - The response must have exactly one `<think>` block and exactly **ONE** `<action>` block.
+   - Example Structure:
+     ```
+     <think>I will autonomously read the default configuration file and proceed with the experiment.</think>
+     <action>
+     {{
+       "type": "read",
+       "content": "{self.default_dir}\\configs\\default_esr_config.json"
      }}
      </action>
      ```
    - Always ensure that file operations and outputs are associated with {self.base_dir}.
 
-10) Non-Default vs. Default Case Summary:
-    - Default Case:  
-      - No new config file is provided by the user.
-      - Use the default configuration files located in the `{self.default_dir}\\configs\\` directory.
-      - New outputs and any created files should be within {self.base_dir}.
-    - Non-Default Case:  
-      - The user requests updates to the config file.
-      - You should read and then generate a modified configuration to {self.base_dir}\\configs\\.
-      - All outputs are still directed to {self.base_dir}, but the config file operations occur at the new path within {self.base_dir}.
-
-11) Restrictions:
+10) Restrictions:
     - Do not reveal or replicate your chain-of-thought except inside the `<think>` block.
-    - Do not produce any actions outside of `"message"`, `"read"`, `"write"`, `"run"`, or `"vision"`.
-"""
-        )
+    - Do not produce any actions outside of `"message"`, `"read"`, `"write"`, `"run"`, `"vision"`, or `"rag_search"`.
 
-        os.makedirs(self.logs_dir, exist_ok=True)
-        # Get a file-safe timestampc
-        file_ts = self._current_timestamp_for_filename()
-        self.logfile_path = os.path.join(self.logs_dir, f"agent_history_{file_ts}.log")
+11) RAG Search Tool:
+   - When you feel stuck, need to learn from past experience, or believe relevant information exists in previous conversations, use the "rag_search" tool
+   - This powerful tool searches through your conversation history embeddings to find contextually relevant information
+   - Use RAG search liberally when it could help improve experimental decisions or resolve issues
+   - To use it, produce an <action> block with type "rag_search". The "content" should be a query describing what you're looking for
+   - Example queries:
+     - "FindNV bright spot in lower right corner - what were successful next steps in previous experiments?"
+     - "ESR signal quality is poor at 2.87 GHz - what parameter adjustments worked before?"
+     - "Galvo scan shows multiple bright spots - how to prioritize which ones to investigate first?"
+   - The search results will provide relevant context from past conversations to inform your current decisions
+   - **Historical Plot Analysis**: When RAG search returns references to historical plots (e.g., "GalvoScan_plot.png from run_20240615_143022"), you can analyze those plots using vision action with the full historical path
+   - RAG search is particularly useful when planning experimental parameters, troubleshooting issues, or building on previous successes
+"""
 
     def _current_timestamp(self):
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -188,50 +448,36 @@ In order to execute the script, you may use one of two cases. The first case is 
     def _build_prompt(self) -> str:
         """
         Combine system_instruction, RAG results, and conversation_history into a single prompt.
-        Also include suggestions for relevant plots.
+        RAG results are clearly separated from the current conversation.
         """
         prompt = self.system_instruction.strip()
         
-        # Get the most recent user message for RAG query
-        recent_user_messages = [turn["content"] for turn in self.conversation_history 
-                               if turn["role"] == "user"]
+        # Separate RAG results from regular conversation
+        rag_results = []
+        regular_conversation = []
         
-        if recent_user_messages:
-            # Use the most recent user message as the query
-            query = recent_user_messages[-1]
-            
-            # RX 05142025
-            # Log that we're performing a RAG query
-            print(f"[RAG] Performing RAG query for: '{query[:50]}...' if len(query) > 50 else query")
-            
-            # Perform RAG search
-            relevant_contexts = self._get_rag_context(query)
-            
-            if relevant_contexts:
-                print(f"[RAG] Retrieved relevant context from previous conversations")
-                print(f"Retrieved context: {relevant_contexts}")
-                prompt += "\n\nRelevant context from previous conversations:\n"
-                prompt += relevant_contexts
-            else:
-                print("[RAG] No relevant context found in previous conversations")
-            
-            # Check for relevant plots
-            relevant_plots = self._get_relevant_plots(query)
-            if relevant_plots:
-                plot_filenames = [os.path.basename(p) for p in relevant_plots]
-                print(f"[RAG] Found relevant plots: {plot_filenames}")
-                self._log("rag", f"Relevant plots: {plot_filenames}")
-                
-                prompt += "\n\nRelevant plots that might help with this query:\n"
-                for plot_path in relevant_plots:
-                    plot_filename = os.path.basename(plot_path)
-                    prompt += f"- {plot_filename}\n"
-                prompt += "\nYou can analyze these plots using the 'vision' action if needed."
-            else:
-                print("[RAG] No relevant plots found")
-        
-        # Add conversation history
         for turn in self.conversation_history:
+            if turn["role"] == "rag_search_result":
+                rag_results.append(turn)
+            else:
+                regular_conversation.append(turn)
+        
+        # Add RAG results section if any exist
+        if rag_results:
+            prompt += "\n\n" + "="*60
+            prompt += "\nRELEVANT CONTEXT FROM PAST EXPERIMENTS:"
+            prompt += "\n" + "="*60
+            
+            for rag_turn in rag_results:
+                prompt += f"\n{rag_turn['content']}"
+            
+            prompt += "\n" + "="*60
+            prompt += "\nEND OF PAST EXPERIMENT CONTEXT"
+            prompt += "\n" + "="*60
+        
+        # Add current conversation history
+        prompt += "\n\nCURRENT CONVERSATION:"
+        for turn in regular_conversation:
             role = turn["role"]
             content = turn["content"]
             if role == "user":
@@ -241,41 +487,60 @@ In order to execute the script, you may use one of two cases. The first case is 
             else:
                 prompt += f"\n{role.capitalize()}: {content}"
         
-        prompt += "\n\nPlease respond with a <think> block and any <action> blocks you need for the next step. Please carefully wait for user and experiment feedback before proceeding to too many actions."
+        prompt += "\n\nPlease respond with a <think> block and exactly ONE <action> block for the next step."
         return prompt
 
     def ask_human_for_permission(self, description: str) -> bool:
-        #RX 05142025
         """
-        Ask the user on the console for permission and log the response.
+        Ask the user for permission based on mode.
+        In assistant mode: Ask for permission
+        In auto mode: Automatically grant permission and log the action
         """
-        self._log("action", f"(ASK PERMISSION) {description}")
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": f"Agent requests permission to: {description}"
-        })
-        print(f"[System] Agent requests permission to: {description}")
-        ans = input("Grant permission? (yes/no): ").strip().lower()
-        self._log("user", f"(permission) {ans}")
-        self.conversation_history.append({
-            "role": "user",
-            "content": f"(permission) {ans}"
-        })
-        ans = "yes"
-        return (ans == "yes")
+        if self.mode == "auto":
+            # In auto mode, automatically grant permission and log the action
+            self._log("action", f"(AUTO MODE - PROCEEDING) {description}")
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": f"[AUTO MODE] Proceeding autonomously with: {description}"
+            })
+            # Cleaner output for auto mode - just show what's happening
+            action_type = description.split(":")[0] if ":" in description else description
+            print(f"🤖 {action_type}")
+            return True
+        else:
+            # In assistant mode, ask for permission as before
+            self._log("action", f"(ASK PERMISSION) {description}")
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": f"Agent requests permission to: {description}"
+            })
+            print(f"[System] Agent requests permission to: {description}")
+            ans = input("Grant permission? (yes/no): ").strip().lower()
+            self._log("user", f"(permission) {ans}")
+            self.conversation_history.append({
+                "role": "user",
+                "content": f"(permission) {ans}"
+            })
+            return (ans == "yes")
 
     def handle_user_input(self, user_message: str):
         """
         Process user prompt: log it, build the prompt, call the LLM, parse and execute actions.
         """
-        print(f"\n[Agent] Processing user input: '{user_message[:50]}{'...' if len(user_message) > 50 else ''}'")  
+        if self.mode == "assistant":
+            print(f"\n[Agent] Processing user input: '{user_message[:50]}{'...' if len(user_message) > 50 else ''}'")  
+        else:
+            print(f"🔄 Processing: {user_message[:50]}{'...' if len(user_message) > 50 else ''}")
+        
         self._log("user", user_message)
         self.conversation_history.append({"role": "user", "content": user_message})
         
         self._log("agent", "Building prompt with RAG context")
         full_prompt = self._build_prompt()
         
-        print("[Agent] Calling LLM with enhanced prompt...")
+        if self.mode == "assistant":
+            print("[Agent] Calling LLM with enhanced prompt...")
+        # In auto mode, don't show "Calling LLM" - it's noise
         llm_response = call_llm(
             user_prompt=full_prompt,
             system_message=self.system_instruction,
@@ -291,52 +556,166 @@ In order to execute the script, you may use one of two cases. The first case is 
             self.conversation_history.append({"role": "assistant", "content": f"(THINK) {chain_of_thought}"})
 
         actions = self._parse_actions(llm_response)
+        
+        # Enforce one action per turn
+        if len(actions) > 1:
+            print(f"[System] Agent attempted {len(actions)} actions. Enforcing one action per turn - using first action only.")
+            actions = actions[:1]
+        elif len(actions) == 0:
+            print("[System] No actions found in agent response.")
+            return
 
-        for action_dict in actions:
+        # Execute single action
+        action_dict = actions[0]
+        a_type = action_dict.get("type", "").lower()
+        content = action_dict.get("content", "")
+
+        if a_type == "message":
+            self._action_message(content)
+        elif a_type == "read":
+            self._action_read_file(content)
+            # In auto mode, continue automatically after non-message actions
+            if self.mode == "auto":
+                self._auto_continue()
+        elif a_type == "write":
+            if self.ask_human_for_permission(f"Write file: {content}"):
+                self._action_write_file(content)
+                if self.mode == "auto":
+                    self._auto_continue()
+            else:
+                print("[System] Write denied by user.")
+                self._log("action", f"WRITE DENIED for {content}")
+                self.conversation_history.append({
+                    "role": "assistant",
+                    "content": f"[Agent] WRITE DENIED for {content}"
+                })
+        elif a_type == "run":
+            if self.ask_human_for_permission(f"Run command: {content}"):
+                self._action_run_command(content)
+                if self.mode == "auto":
+                    self._auto_continue()
+            else:
+                print("[System] Run denied by user.")
+                self._log("action", f"RUN DENIED for {content}")
+                self.conversation_history.append({
+                    "role": "assistant",
+                    "content": f"[Agent] RUN DENIED for {content}"
+                })
+        elif a_type == "vision":
+            if self.ask_human_for_permission(f"Analyze plot: {content}"):
+                self._action_vision(content)
+                if self.mode == "auto":
+                    self._auto_continue()
+            else:
+                print("[System] Vision analysis denied by user.")
+                self._log("action", f"VISION DENIED for {content}")
+                self.conversation_history.append({
+                    "role": "assistant",
+                    "content": f"[Agent] VISION DENIED for {content}"
+                })
+        elif a_type == "rag_search":
+            # For RAG search, we don't typically need explicit human permission
+            # as it's an internal information retrieval tool.
+            self._action_rag_search(content)
+            if self.mode == "auto":
+                self._auto_continue()
+        else:
+            print(f"[System] Unknown action type: {a_type}")
+            self._log("action", f"Unknown action {a_type}")
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": f"[Agent] Unknown action {a_type}"
+            })
+
+    def _auto_continue(self):
+        """Auto-continue in auto mode by generating next steps automatically until agent sends a message."""
+        if self.mode != "auto":
+            return
+            
+        max_auto_steps = 10  # Prevent infinite loops
+        auto_step_count = 0
+        
+        while auto_step_count < max_auto_steps:
+            auto_step_count += 1
+            print(f"🔄 Thinking... (step {auto_step_count})")
+            
+            # Add auto-continue prompt
+            auto_prompt = "Continue with the next step in the experimental workflow based on current results and context."
+            self.conversation_history.append({
+                "role": "system", 
+                "content": f"AUTO_CONTINUE: {auto_prompt}"
+            })
+            
+            # Generate next response
+            full_prompt = self._build_prompt()
+            
+            llm_response = call_llm(
+                user_prompt=full_prompt,
+                system_message=self.system_instruction,
+                max_tokens=3000,
+                temperature=0.7
+            )
+            self._log("assistant", f"(AUTO-{auto_step_count}) {llm_response}")
+            self.conversation_history.append({"role": "assistant", "content": f"(AUTO-{auto_step_count}) {llm_response}"})
+            
+            # Process the auto-response
+            chain_of_thought = self._parse_think(llm_response)
+            if chain_of_thought:
+                self._log("assistant", f"(THINK-AUTO-{auto_step_count}) {chain_of_thought}")
+                self.conversation_history.append({"role": "assistant", "content": f"(THINK-AUTO-{auto_step_count}) {chain_of_thought}"})
+
+            actions = self._parse_actions(llm_response)
+            
+            if len(actions) > 1:
+                print(f"[AUTO MODE] Agent attempted {len(actions)} actions. Using first action only.")
+                actions = actions[:1]
+            elif len(actions) == 0:
+                print("[AUTO MODE] No actions found in auto-response. Stopping auto-continue.")
+                break
+
+            # Execute the auto action
+            action_dict = actions[0]
             a_type = action_dict.get("type", "").lower()
             content = action_dict.get("content", "")
 
             if a_type == "message":
                 self._action_message(content)
+                # Stop auto-continue when agent sends message - human input needed
+                print("💬 Agent has a question for you:")
+                break
             elif a_type == "read":
                 self._action_read_file(content)
+                # Continue auto loop after read
             elif a_type == "write":
                 if self.ask_human_for_permission(f"Write file: {content}"):
                     self._action_write_file(content)
+                    # Continue auto loop after write
                 else:
-                    print("[System] Write denied by user.")
-                    self._log("action", f"WRITE DENIED for {content}")
-                    self.conversation_history.append({
-                        "role": "assistant",
-                        "content": f"[Agent] WRITE DENIED for {content}"
-                    })
+                    print("[AUTO MODE] Write denied. Stopping auto-continue.")
+                    break
             elif a_type == "run":
                 if self.ask_human_for_permission(f"Run command: {content}"):
                     self._action_run_command(content)
+                    # Continue auto loop after run
                 else:
-                    print("[System] Run denied by user.")
-                    self._log("action", f"RUN DENIED for {content}")
-                    self.conversation_history.append({
-                        "role": "assistant",
-                        "content": f"[Agent] RUN DENIED for {content}"
-                    })
+                    print("[AUTO MODE] Run denied. Stopping auto-continue.")
+                    break
             elif a_type == "vision":
                 if self.ask_human_for_permission(f"Analyze plot: {content}"):
                     self._action_vision(content)
+                    # Continue auto loop after vision
                 else:
-                    print("[System] Vision analysis denied by user.")
-                    self._log("action", f"VISION DENIED for {content}")
-                    self.conversation_history.append({
-                        "role": "assistant",
-                        "content": f"[Agent] VISION DENIED for {content}"
-                    })
+                    print("[AUTO MODE] Vision denied. Stopping auto-continue.")
+                    break
+            elif a_type == "rag_search":
+                self._action_rag_search(content)
+                # Continue auto loop after RAG search
             else:
-                print(f"[System] Unknown action type: {a_type}")
-                self._log("action", f"Unknown action {a_type}")
-                self.conversation_history.append({
-                    "role": "assistant",
-                    "content": f"[Agent] Unknown action {a_type}"
-                })
+                print(f"[AUTO MODE] Unknown action type: {a_type}. Stopping auto-continue.")
+                break
+        
+        if auto_step_count >= max_auto_steps:
+            print(f"[AUTO MODE] Reached maximum auto-steps ({max_auto_steps}). Stopping to prevent infinite loop.")
 
     def _parse_actions(self, llm_text: str):
         """
@@ -357,7 +736,10 @@ In order to execute the script, you may use one of two cases. The first case is 
         """
         Print a message and log it.
         """
-        print(message_content)
+        if self.mode == "auto":
+            print(f"🤖 {message_content}")
+        else:
+            print(message_content)
         self._log("action", f"MESSAGE: {message_content}")
         self.conversation_history.append({"role": "assistant", "content": message_content})
 
@@ -425,11 +807,12 @@ In order to execute the script, you may use one of two cases. The first case is 
         """
         Parse the run command to extract the script and config file.
         Expected format:
-            py experiment_scripts\\<script_name>.py --config <config_file> [--output-dir <output_directory>]
+            py {self.scripts_dir}\\<script_name>.py --config <config_file> [--output-dir <output_directory>]
         where <script_name> is one of ESR, find_nv, galvo_scan, or optimize.
         """
         # More flexible pattern to handle different path formats and whitespace variations
-        pattern = r"py\s+(?P<path>(?:projects[\\/])?(?:experiment_scripts|NVExperiment[\\/]scripts)[\\/](ESR\.py|find_nv\.py|galvo_scan\.py|optimize\.py))\s+--config\s+(?P<config>[\w\\./-]+)(?:\s+--output-dir\s+(?P<output_dir>[\w\\./-]+))?"
+        # Accept: experiment_scripts, projects/experiment_scripts, projects/NVExperiment/scripts, or {self.scripts_dir}
+        pattern = r"py\s+(?P<path>(?:projects[\\/])?(?:experiment_scripts|NVExperiment[\\/]scripts|[^\\\/\s]+[\\/]NVExperiment[\\/]scripts)[\\/](ESR\.py|find_nv\.py|galvo_scan\.py|optimize\.py))\s+--config\s+(?P<config>[\w\\./-]+)(?:\s+--output-dir\s+(?P<output_dir>[\w\\./-]+))?"
         m = re.search(pattern, command)
         if m:
             result = {"script": m.group("path"), "config": m.group("config")}
@@ -439,7 +822,7 @@ In order to execute the script, you may use one of two cases. The first case is 
         else:
             # More informative error message that includes the command that failed to parse
             allowed_scripts = "ESR.py, find_nv.py, galvo_scan.py, or optimize.py"
-            error_msg = f"Run command parsing error for command: '{command}'. \nCommand must be in the format: py experiment_scripts/<script_name>.py --config <config_file> [--output-dir <output_directory>] \nwhere <script_name> is one of {allowed_scripts}"
+            error_msg = f"Run command parsing error for command: '{command}'. \nCommand must be in the format: py {self.scripts_dir}/<script_name>.py --config <config_file> [--output-dir <output_directory>] \nwhere <script_name> is one of {allowed_scripts}"
             raise ValueError(error_msg)
 
 
@@ -509,9 +892,12 @@ In order to execute the script, you may use one of two cases. The first case is 
                 plot_filename = os.path.basename(filepath)
                 filepath = os.path.join(self.data_dir, plot_filename)
         
-        # Check if the file is in the allowed data directory
-        if not filepath.startswith(self.data_dir):
-            msg = f"[System] VISION denied: {filepath} is not in the allowed data directory ({self.data_dir})."
+        # Check if the file is in the allowed data directory (current run) or valid historical plot
+        is_current_run = filepath.startswith(self.data_dir)
+        is_historical_plot = self._is_valid_historical_plot_path(filepath) if not is_current_run else False
+        
+        if not is_current_run and not is_historical_plot:
+            msg = f"[System] VISION denied: {filepath} is not in allowed directories (current: {self.data_dir} or historical runs)."
             print(msg)
             self._log("action", msg)
             self.conversation_history.append({"role": "assistant", "content": msg})
@@ -625,10 +1011,10 @@ In order to execute the script, you may use one of two cases. The first case is 
         
         return unanalyzed_plots
     
-    def _get_rag_context(self, query, top_k=3):
+    def _get_rag_context(self, query, top_k=2):
         """
         Retrieve relevant context from previous conversations using RAG.
-        Highlight any plot references in the retrieved context.
+        This now searches across whole-chunk embeddings without re-chunking.
         
         Args:
             query: The user's query to search against
@@ -652,22 +1038,23 @@ In order to execute the script, you may use one of two cases. The first case is 
             return ""
         
         print(f"[RAG] Found {len(embeddings_files)} embedding files to search")
-        self._log("rag", f"Searching {len(embeddings_files)} embedding files for query: {query}")
+        self._log("rag_search", f"RAG_CONTEXT_SEARCH: Searching {len(embeddings_files)} embedding files for query: {query}")
         
         # Search for similar contexts across all embedding files
         results = []
         for embedding_file in embeddings_files:
             try:
-                print(f"[RAG] Searching file: {os.path.basename(embedding_file)}")
-                similar_contexts = search_similar(query, embedding_file, top_k=top_k)
-                if similar_contexts:
-                    print(f"[RAG] Found {len(similar_contexts)} relevant contexts in {os.path.basename(embedding_file)}")
-                    results.extend(similar_contexts)
+                # search_similar now returns a single dict (or None) for the whole chunk
+                # and no longer takes top_k.
+                similar_context = search_similar(query, embedding_file)
+                if similar_context:
+                    print(f"[RAG] Searched file: {os.path.basename(embedding_file)}, Score: {similar_context['score']:.4f}")
+                    results.append(similar_context)
                 else:
-                    print(f"[RAG] No relevant contexts found in {os.path.basename(embedding_file)}")
+                    print(f"[RAG] No result or error for file: {os.path.basename(embedding_file)}")
             except Exception as e:
                 print(f"[RAG] Error searching embeddings file {embedding_file}: {str(e)}")
-                self._log("rag", f"Error searching embeddings file {embedding_file}: {str(e)}")
+                self._log("rag_search", f"RAG_CONTEXT_ERROR: Error searching embeddings file {embedding_file}: {str(e)}")
         
         # Sort by similarity score and take top_k
         results.sort(key=lambda x: x["score"], reverse=True)
@@ -702,101 +1089,248 @@ In order to execute the script, you may use one of two cases. The first case is 
     
     def save_conversation_embeddings(self):
         """
-        Embed the entire conversation history and save to the embeddings directory.
-        Also include references to any plots that were analyzed.
+        Embed the conversation history in overlapping chunks and save to the embeddings directory.
+        Each chunk includes references to any plots analyzed within that chunk and all available plots.
         """
         if not self.conversation_history:
             print("[Embeddings] No conversation history to save")
             return
-        
-        print(f"[Embeddings] Preparing to save conversation with {len(self.conversation_history)} turns")
-        self._log("embeddings", f"Saving conversation with {len(self.conversation_history)} turns")
-        
-        # Format conversation for embedding
-        conversation_text = []
-        
-        # Track which plots have been analyzed in this conversation
-        analyzed_plots = set()
-        
-        # Count message types for logging
-        user_messages = 0
-        assistant_messages = 0
-        vision_analyses = 0
-        
-        for turn in self.conversation_history:
-            role = turn["role"]
-            content = turn["content"]
-            conversation_text.append(f"{role}: {content}")
+
+        # Ensure chunk size and overlap are valid
+        if self.embedding_chunk_size <= 0 or self.embedding_chunk_overlap < 0 or self.embedding_chunk_overlap >= self.embedding_chunk_size:
+            print(f"[Embeddings] Invalid chunk_size ({self.embedding_chunk_size}) or chunk_overlap ({self.embedding_chunk_overlap}). Skipping.")
+            return
+
+        # Filter out RAG search results from conversation history before chunking
+        # (RAG results are already from past conversations, no need to re-embed them)
+        conversation_for_embedding = [turn for turn in self.conversation_history if turn["role"] != "rag_search_result"]
+
+        step = self.embedding_chunk_size - self.embedding_chunk_overlap
+        print(f"[Embeddings] Preparing to save conversation with {len(self.conversation_history)} turns ({len(conversation_for_embedding)} for embedding after filtering RAG results) in overlapping chunks of size {self.embedding_chunk_size} with a step of {step}.")
+        self._log("embeddings", f"Saving conversation with {len(self.conversation_history)} turns ({len(conversation_for_embedding)} for embedding) in overlapping chunks of size {self.embedding_chunk_size}, step {step}.")
+
+        chunk_index = 0
+        for i in range(0, len(conversation_for_embedding), step):
+            chunk = conversation_for_embedding[i:i + self.embedding_chunk_size]
             
-            # Count message types
-            if role == "user":
-                user_messages += 1
-            elif role == "assistant":
-                assistant_messages += 1
+            # If the last chunk is smaller than the overlap, it's likely not useful and has been mostly covered.
+            if len(chunk) < self.embedding_chunk_overlap and i > 0:
+                continue
             
-            # Check if this is a vision analysis result
-            if role == "assistant" and "[System] Vision analysis result:" in content:
-                vision_analyses += 1
-                # Extract the plot filename from previous messages
-                for i in range(len(self.conversation_history)):
-                    if (i < len(self.conversation_history) - 1 and 
-                        "VISION:" in self.conversation_history[i].get("content", "")):
-                        plot_path = self.conversation_history[i]["content"].split("VISION:")[1].strip()
+            chunk_index += 1
+            
+            print(f"[Embeddings] Processing chunk {chunk_index} ({len(chunk)} turns)")
+            self._log("embeddings", f"Processing chunk {chunk_index} ({len(chunk)} turns)")
+
+            chunk_text_parts = []
+            chunk_analyzed_plots = set()
+
+            # Process turns in the current chunk
+            for turn in chunk:
+                role = turn["role"]
+                content = turn["content"]
+                chunk_text_parts.append(f"{role}: {content}")
+
+                # Identify plots analyzed in this chunk
+                if role == "action" and content.startswith("VISION:"):
+                    try:
+                        plot_path = content.split("VISION:")[1].strip()
                         plot_filename = os.path.basename(plot_path)
-                        analyzed_plots.add(plot_filename)
-        
-        print(f"[Embeddings] Conversation summary: {user_messages} user messages, {assistant_messages} assistant responses, {vision_analyses} vision analyses")
-        
-        # Add references to all plots in the data directory
-        available_plots = self._get_available_plots()
-        if available_plots:
-            print(f"[Embeddings] Including {len(available_plots)} plots in embedding data")
-            conversation_text.append("\nAvailable plots in this session:")
-            for plot_path in available_plots:
-                plot_filename = os.path.basename(plot_path)
-                status = "Analyzed" if plot_filename in analyzed_plots else "Not analyzed"
-                conversation_text.append(f"- {plot_filename} ({status}): {plot_path}")
-        else:
-            print("[Embeddings] No plots available to include in embedding data")
-        
-        # Join all turns with newlines
-        full_text = "\n".join(conversation_text)
-        
-        # Generate a timestamp for the embedding file
-        timestamp = self._current_timestamp_for_filename()
-        embedding_file = os.path.join(self.embeddings_dir, f"conversation_{timestamp}.json")
-        
-        # Save the embeddings
-        try:
-            # Count existing embedding files before saving
-            existing_files = [f for f in os.listdir(self.embeddings_dir) if f.endswith('.json')]
-            print(f"[Embeddings] Current embedding files count: {len(existing_files)}")
-            
-            # Save the new embeddings
-            save_embeddings(full_text, embedding_file)
-            
-            # Verify the file was created
-            if os.path.exists(embedding_file):
-                print(f"[Embeddings] Successfully saved conversation to {embedding_file}")
-                self._log("embeddings", f"Successfully saved conversation to {embedding_file}")
-                
-                # Count embedding files after saving to confirm a new one was added
-                updated_files = [f for f in os.listdir(self.embeddings_dir) if f.endswith('.json')]
-                print(f"[Embeddings] Updated embedding files count: {len(updated_files)}")
-                if len(updated_files) > len(existing_files):
-                    print("[Embeddings] Confirmed: New embedding file was created")
-                else:
-                    print("[Embeddings] Warning: No new embedding file was created")
+                        chunk_analyzed_plots.add(plot_filename)
+                        print(f"[Embeddings] Plot {plot_filename} marked as analyzed in chunk {chunk_index}")
+                    except Exception as e:
+                        print(f"[Embeddings] Error parsing VISION action in chunk {chunk_index}: {content} - {e}")
+                        self._log("embeddings", f"Error parsing VISION action in chunk {chunk_index}: {content} - {e}")
+                elif role == "assistant" and "[System] Vision analysis result:" in content:
+                    # Attempt to find the corresponding VISION action for this result if not already captured
+                    # This requires looking back for the VISION action that led to this result.
+                    # For simplicity, we primarily rely on the "action" log for "VISION:"
+                    pass
+
+
+            # Add information about all available plots to this chunk's text
+            available_plots = self._get_available_plots()
+            if available_plots:
+                chunk_text_parts.append("\nAvailable plots in this session (at the time of this chunk):")
+                for plot_path in available_plots:
+                    plot_filename = os.path.basename(plot_path)
+                    status = "Analyzed in this chunk" if plot_filename in chunk_analyzed_plots else "Not analyzed in this chunk"
+                    chunk_text_parts.append(f"- {plot_filename} ({status}): {plot_path}")
             else:
-                print(f"[Embeddings] Warning: Failed to verify creation of {embedding_file}")
-        except Exception as e:
-            print(f"[Embeddings] Error saving embeddings: {str(e)}")
-            self._log("embeddings", f"Error saving embeddings: {str(e)}")
+                chunk_text_parts.append("\nNo plots available at the time of this chunk.")
+
+            full_chunk_text = "\n".join(chunk_text_parts)
+            timestamp = self._current_timestamp_for_filename()
+            embedding_chunk_file = os.path.join(self.embeddings_dir, f"conversation_chunk_{chunk_index}_{timestamp}.json")
+
+            try:
+                print(f"[Embeddings] Saving chunk {chunk_index} to {embedding_chunk_file}")
+                save_embeddings(full_chunk_text, embedding_chunk_file)
+                if os.path.exists(embedding_chunk_file):
+                    print(f"[Embeddings] Successfully saved chunk {chunk_index} to {embedding_chunk_file}")
+                    self._log("embeddings", f"Successfully saved chunk {chunk_index} to {embedding_chunk_file}")
+                else:
+                    print(f"[Embeddings] Warning: Failed to verify creation of {embedding_chunk_file}")
+                    self._log("embeddings", f"Warning: Failed to verify creation of {embedding_chunk_file}")
+            except Exception as e:
+                print(f"[Embeddings] Error saving embeddings for chunk {chunk_index}: {str(e)}")
+                self._log("embeddings", f"Error saving embeddings for chunk {chunk_index}: {str(e)}")
+
+        # Existing overall logging (can be kept for a session summary)
+        user_messages = sum(1 for turn in self.conversation_history if turn["role"] == "user")
+        assistant_messages = sum(1 for turn in self.conversation_history if turn["role"] == "assistant")
+        vision_analyses = sum(1 for turn in self.conversation_history if turn["role"] == "action" and turn["content"].startswith("VISION:"))
+        rag_searches = sum(1 for turn in self.conversation_history if turn["role"] == "rag_search_result")
+
+        print(f"[Embeddings] Overall conversation summary: {user_messages} user messages, {assistant_messages} assistant responses, {vision_analyses} vision actions, {rag_searches} RAG searches.")
+        self._log("embeddings", f"Overall conversation summary: {user_messages} user messages, {assistant_messages} assistant responses, {vision_analyses} vision actions, {rag_searches} RAG searches.")
+
+    def _get_recent_conversation_context(self, num_turns=8) -> str:
+        """Builds a context string from the most recent turns of the conversation, excluding RAG search results."""
+        if num_turns <= 0:
+            return ""
+        
+        # Filter out RAG search results to avoid circular references
+        regular_conversation = [turn for turn in self.conversation_history if turn["role"] != "rag_search_result"]
+        recent_turns = regular_conversation[-num_turns:]
+        context_lines = [f"{turn['role']}: {turn['content']}" for turn in recent_turns]
+        return "\n".join(context_lines)
+
+    def _action_rag_search(self, query: str):
+        """
+        Perform a RAG search using the given query, augmented with recent conversation context.
+        """
+        self._log("rag_search", f"RAG_SEARCH_QUERY: {query}")
+        
+        if self.mode == "auto":
+            print(f"🔍 Searching past experience...")
+        else:
+            print(f"[Agent] Performing RAG search for query: '{query}'")
+
+        # Add recent conversation context to the query for more robust search
+        recent_context = self._get_recent_conversation_context(num_turns=8)
+        contextualized_query = f"Based on the recent conversation below, find relevant information for the user's query.\n\n--- RECENT CONVERSATION ---\n{recent_context}\n\n--- USER QUERY ---\n{query}"
+        
+        self._log("rag_search", f"RAG_SEARCH_CONTEXTUALIZED_QUERY: {contextualized_query}")
+        # Don't print the full contextualized query - it's too verbose for CLI
+
+        rag_results = self._get_rag_context(contextualized_query) # Use the new contextualized query
+
+        if rag_results:
+            # Ensure results are formatted as a string, _get_rag_context might return a list or string
+            if isinstance(rag_results, list):
+                formatted_results = "\n".join(str(r) for r in rag_results)
+            else:
+                formatted_results = str(rag_results) # Ensure it's a string
+
+            # Format RAG results with clear separation markers
+            clearly_formatted_rag = f"""
+=== RAG SEARCH RESULTS START ===
+Query: {query}
+Found relevant context from past experiments:
+
+{formatted_results}
+
+=== RAG SEARCH RESULTS END ===
+"""
+
+            if self.mode == "auto":
+                # In auto mode, just show that we found relevant context, not the full content
+                rag_results_message = f"[Agent] Found relevant context from past experiments"
+                print(f"✅ Found relevant past experience")
+            else:
+                # In assistant mode, show the full results
+                rag_results_message = f"[Agent] RAG search results for query '{query}':\n{clearly_formatted_rag}"
+                print(rag_results_message)
+        else:
+            clearly_formatted_rag = f"""
+=== RAG SEARCH RESULTS START ===
+Query: {query}
+No relevant context found in past experiments.
+=== RAG SEARCH RESULTS END ===
+"""
+            if self.mode == "auto":
+                rag_results_message = f"[Agent] No relevant context found for query '{query}'"
+                print(f"ℹ️ No relevant past experience found")
+            else:
+                rag_results_message = f"[Agent] No relevant context found by RAG search for query '{query}'."
+                print(rag_results_message)
+
+        # Always log the full results with clear labeling, regardless of mode
+        self._log("rag_search", f"RAG_SEARCH_RESULTS: {clearly_formatted_rag}")
+        
+        # Add to conversation history with special role to distinguish from regular conversation
+        self.conversation_history.append({
+            "role": "rag_search_result", 
+            "content": clearly_formatted_rag,
+            "query": query,
+            "timestamp": self._current_timestamp()
+        })
+
+    def _is_valid_historical_plot_path(self, filepath):
+        """
+        Check if a filepath is a valid historical plot path within the project structure.
+        
+        Args:
+            filepath: Path to check
+            
+        Returns:
+            bool: True if valid historical plot path
+        """
+        # Convert to absolute path for comparison
+        if not os.path.isabs(filepath):
+            return False
+            
+        # Must be within the project runs directory
+        runs_base_dir = os.path.join(self.project_root_dir, self.project_name, self.runs_dir_name)
+        runs_base_dir = os.path.abspath(runs_base_dir)
+        filepath = os.path.abspath(filepath)
+        
+        if not filepath.startswith(runs_base_dir):
+            return False
+            
+        # Must be in a data subdirectory
+        if not "/data/" in filepath.replace("\\", "/") and not "\\data\\" in filepath:
+            return False
+            
+        # Must be a plot file
+        if not filepath.endswith('.png'):
+            return False
+            
+        # Must be a recognized plot type
+        filename = os.path.basename(filepath)
+        if not any(plot_type in filename for plot_type in ['ESR', 'FindNV', 'GalvoScan', 'Optimization']):
+            return False
+            
+        return True
 
 
 if __name__ == "__main__":
-    agent = NVExperimentAgent()
     print("=== NV Experiment Agent CLI ===")
+    print("Choose your agent mode:")
+    print("1. Assistant Mode (asks for permission before actions)")
+    print("2. Auto Mode (operates autonomously)")
+    
+    while True:
+        mode_choice = input("Enter choice (1 or 2): ").strip()
+        if mode_choice == "1":
+            mode = "assistant"
+            break
+        elif mode_choice == "2":
+            mode = "auto"
+            break
+        else:
+            print("Invalid choice. Please enter 1 or 2.")
+    
+    agent = NVExperimentAgent(mode=mode)
+    print(f"\n=== Agent initialized in {mode.upper()} MODE ===")
+    
+    if mode == "assistant":
+        print("Assistant mode: The agent will ask for permission before taking actions.")
+    else:
+        print("Auto mode: The agent will operate autonomously with minimal human intervention.")
+        print("It will only ask for help when encountering issues or needing clarification.")
+    
     print("Type 'exit' to quit.\n")
     
     # Print information about the embeddings directory

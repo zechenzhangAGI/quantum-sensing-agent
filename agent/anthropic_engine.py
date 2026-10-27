@@ -4,16 +4,28 @@ import anthropic
 import base64
 from mimetypes import guess_type
 import os
+import sys
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load environment variables from a .env file, searching upward from agent/
+# (so either agent/.env or a .env in the repository root is picked up)
+load_dotenv(override=True)
 
-# Replace with your actual Anthropic API key
-ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+# Get Anthropic API key with better error handling
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 
-# Choose a default model, e.g. "claude-2" or "claude-2.0"
-DEFAULT_MODEL = "claude-3-5-sonnet-20241022"
-sonnet_new = "claude-3-7-sonnet-20250219"
+
+if not ANTHROPIC_API_KEY or ANTHROPIC_API_KEY == "YOUR_ANTHROPIC_API_KEY_HERE":
+    print("ERROR: Anthropic API key not found or not set!")
+    print("Please create a .env file in the project root with your API key:")
+    print("1. Copy env_template.txt to .env")
+    print("2. Replace YOUR_ANTHROPIC_API_KEY_HERE with your actual Anthropic API key")
+    print("3. The .env file is already in .gitignore so it won't be committed")
+    sys.exit(1)
+
+# Model configuration - can be overridden via environment variables
+DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", "claude-3-5-sonnet-20241022")
+sonnet_new = os.environ.get("SONNET_NEW", "claude-3-7-sonnet-20250219")
 
 def call_llm(
     user_prompt: str,
@@ -43,12 +55,20 @@ def call_llm(
     # The snippet you provided looks like a newer/beta interface.
     # We'll mirror your snippet as closely as possible:
 
+    system_content_blocks = [
+        {
+            "type": "text",
+            "text": system_message, # The original system_message string
+            "cache_control": {"type": "ephemeral"}
+        }
+    ]
+
     response = client.messages.create(
         model=model,
         max_tokens=max_tokens,
         temperature=temperature,
         # The snippet shows a "system" parameter for the system message:
-        system=system_message,
+        system=system_content_blocks,
         messages=[
             {
                 "role": "user",

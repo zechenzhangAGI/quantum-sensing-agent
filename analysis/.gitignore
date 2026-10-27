@@ -1,0 +1,6 @@
+stats.json
+stats_logs.json
+esr_fit.json
+data/
+figures/
+__pycache__/

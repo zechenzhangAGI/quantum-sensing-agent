@@ -1,0 +1,70 @@
+___
+
+# TODO -- 03 Apr 
+## 1. tighten up the ship
+### a. update file structure to be nicer e.g.
+```
+projects/
+  MyProject/
+    runs/
+      run_3_20250321_153055/
+        configs/
+          config_esr_1.json  (made by the agent)
+        data/
+          data_esr_1.json
+          plot_esr_1.png
+          data_find_nv_1.json
+          plot_find_nv_1.png
+          ...
+        logs/
+          log_3.txt
+```
+
+PROBLEM -- should we store default configs and data in the projects dir? (which I'm doing right now)
+- This should probably get updated to a contextual call once the database is properly set up.
+
+PROBLEM -- different OS = different filepath convention
+- Currently I have agent_mac.py and agent.py, but we should probably somehow detect the OS.
+## **SHOULD BE DONE** + all the prompts and whatnot as well
+
+- This will lend itself to being more of a structured database that the agent can knowledge-extract from (e.g. RAG, another action that involves reading from the database structure, etc.)
+    - Becomes a dynamic database and long-term memory almost? Especially w/ human supervision
+    - No longer starting from scratch W, everything is saved into a log
+        - But it has to be more efficient...first glean fundamental rules, then selectively do logs based on similarity to present experiment
+    - *improves decision-making*
+
+### b. make the CLI less buggy
+- Parsing = agent + experimental runs doesn't quite match up, just make it a bit better lol
+
+## **SHOULD ALSO BE DONE** (not something I can reproduce anymore, @Ruolan please feel free to test as well + send reproducible bugginess)
+
+## set sail?!
+Refer to "This will lend itself..." for next big step.
+ReAct prompting? -- could be good to daisy-chain together data, especially with the structured database, chaining experiments, etc.
+
+# TODO --03 June
+## We have implemented a RAG system in the agent.py that searches past converstation history to find new information when executing new tasks. However, it is done using the user content as embedding search and on the other hand also saves the entire conversation history as one emedding text file. Instead, we want to
+--1. Make the agent store the embeddings as chunks of texts every few tunrs (where the number of turns can be set, default is 10 let's say)
+--2. When retrieving the texts using RAG, we want to implement a new strategy where the agent has the option to search through past history using RAG when it gets stuck, ie. it can use RAG as a tool. in this case, think about how to implement this. For example, the query embedding should be the recent conversation history rather than the pure user content. Maybe you should also change system prompt since now RAG is a tool for the agent to retrieve relevant info from past. 
+--3. Right now it seems like I have not implemented the cached input from anthropic. checkout how to implement that to save money 
+
+  Note: The agent.py file is written for the final environment on windows that controls the actual experiments. You can create a mock test environment which might be the agent_mac.py file (but you have to tweek it along) to test the implemented functionalities. also read the test scripts for reference.  
+
+#TODO --June 9
+1. Fix the system prompt regarding the default and non-default case (basically right now prompt 7 and 10 for both the auto and assistant mode is weridly written. Esentially I just want to convey the concept that there are default config files for each experiment script and the agent has refer to them when setting up the experiment; however they don't have to be used but can be edited each time for experiment )
+2. Describe each script's input and output more clearly for both auto and assistant mode. sometimes the fit in the plot is just a Gaussian fit algorithm and may not necessarily reflect the signal found. I have described them more carefully below feel free to make them more clear 
+
+Galvoscan presents the brightness of the sample(unit:kilo counts per second kcps) at each confocal point. 
+FindNV is the zoomed-in GalvoScan. The the red label of find NV is the result of a 2D Gaussian fit that tries to find local maximum. 
+Optimization is the1D scan of X/Y/Z in order to optimize counts, and the red label of optimized location is the peak of 1D Gaussian fit.
+ESR measures the fluorescent response of microwave drive. ESR fit is the 1D Gaussian fit of local minima. 
+
+
+3. Describe RAG search more clearly to the agent, basically it wants to use it whenever it feels that learning from past history is helpful for the current experiment. 
+4. Generally look at the system prompts again and see if they are logical,concise, coherent and clear.
+
+
+# TODO --June 10
+1. make the system prompt clear about reading the default configs and then write the configs folowing the same format
+2. Make the assistant mode and auto mode better--> assistant mode is basically the version we have now, but every turn the agent can only use one tool (tell it in the system prompt show the read, write, run, message,vision examples clearly); In auto mode, feed the agent it's own assistant content and don't prompt the user in the cli, unless it's using message to ask the human for clarification or help, also be clear about it in the system prompt about the tool as in assistant mode, 
+3. Whenever it's deciding what to do with the experiment results and unsure it should use rag search to refer back to past history  

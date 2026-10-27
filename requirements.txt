@@ -1,5 +1,16 @@
+# Agent (LLM, retrieval over past sessions)
 anthropic
 python-dotenv
 sentence-transformers
 faiss-cpu
 numpy
+
+# Measurement wrapper scripts and the example figure
+matplotlib
+
+# Optional: alternative engines (agent/deepseek_engine.py, agent/togetherai_deepseek_engine.py)
+# openai
+# together
+
+# Hardware control (NOT on PyPI; the Harvard lab's own stack, not included):
+#   pylabcontrol, b26_toolkit

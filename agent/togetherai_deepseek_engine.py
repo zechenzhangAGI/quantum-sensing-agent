@@ -5,7 +5,7 @@ from together import Together
 import base64
 from mimetypes import guess_type
 
-# Read the Together AI API key from the environment
+# Read the Together AI API key from the environment (see env_template.txt)
 TOGETHER_AI_API_KEY = os.environ.get("TOGETHER_API_KEY")
 
 

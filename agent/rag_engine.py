@@ -79,59 +79,46 @@ def extract_plot_references(text):
     
     return text, plot_references
 
-def search_similar(query, embedding_file, top_k=3):
+def search_similar(query, embedding_file):
     """
-    Search for similar contexts in the embedding file.
+    Search for similarity between a query and an entire text chunk in an embedding file.
     
     Args:
         query: Query text
         embedding_file: Path to the embedding file
-        top_k: Number of results to return
         
     Returns:
-        List of dictionaries with text, plot_references, and similarity score
+        A dictionary with text, plot_references, and similarity score, or None.
     """
     try:
-        # Load the stored embeddings
-        text, stored_embeddings = load_embeddings(embedding_file)
+        # Load the stored text and its single embedding vector
+        text, stored_embedding = load_embeddings(embedding_file)
         
-        # Split the text into chunks (paragraphs or turns)
-        chunks = text.split('\n')
+        # Ensure stored_embedding is a 1D array
+        stored_embedding = np.array(stored_embedding).flatten()
+
+        # Generate embedding for the query
+        query_embedding = model.encode(query).flatten()
         
-        # Generate embeddings for each chunk
-        chunk_embeddings = model.encode(chunks)
+        # Calculate Cosine Similarity
+        dot_product = np.dot(query_embedding, stored_embedding)
+        norm_query = np.linalg.norm(query_embedding)
+        norm_stored = np.linalg.norm(stored_embedding)
         
-        # Generate embeddings for the query
-        query_embedding = model.encode(query)
-        
-        # Create a FAISS index
-        dimension = query_embedding.shape[0]
-        index = faiss.IndexFlatL2(dimension)
-        
-        # Add the chunk embeddings to the index
-        index.add(np.array(chunk_embeddings).astype('float32'))
-        
-        # Search for similar chunks
-        distances, indices = index.search(np.array([query_embedding]).astype('float32'), min(top_k, len(chunks)))
-        
-        # Format the results
-        results = []
-        for i, idx in enumerate(indices[0]):
-            if idx < len(chunks):  # Ensure index is valid
-                # Convert L2 distance to similarity score (higher is better)
-                similarity = 1.0 / (1.0 + distances[0][i])
+        if norm_query == 0 or norm_stored == 0:
+            similarity = 0.0
+        else:
+            similarity = dot_product / (norm_query * norm_stored)
+
+        # Get the chunk text and extract plot references
+        _, plot_refs = extract_plot_references(text)
                 
-                # Get the chunk text and extract plot references
-                chunk_text = chunks[idx]
-                _, plot_refs = extract_plot_references(chunk_text)
-                
-                results.append({
-                    "text": chunk_text,
-                    "plot_references": plot_refs,
-                    "score": float(similarity)
-                })
-        
-        return results
+        return {
+            "text": text,
+            "plot_references": plot_refs,
+            "score": float(similarity)
+        }
+
     except Exception as e:
-        print(f"Error in search_similar: {str(e)}")
+        print(f"Error in search_similar for file {embedding_file}: {str(e)}")
         return []
