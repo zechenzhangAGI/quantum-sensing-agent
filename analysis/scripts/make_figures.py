@@ -104,8 +104,8 @@ def fig_chain():
     gs = fig.add_gridspec(2, 2, hspace=0.32, wspace=0.18)
     a = fig.add_subplot(gs[0, 0]); b = fig.add_subplot(gs[0, 1])
     c = fig.add_subplot(gs[1, 0]); e = fig.add_subplot(gs[1, 1])
-    for ax, png, title in ((a, 'GalvoScan_plot_20250514_083103.png', '(a) galvo scan, 08:31 (toolkit PNG)'),
-                           (b, 'FindNV_plot_20250514_112326.png', '(b) find_nv on candidate 3, 11:23 (toolkit PNG)')):
+    for ax, png, title in ((a, 'GalvoScan_plot_20250514_083103.png', '(a) Confocal scan of the field of view'),
+                           (b, 'FindNV_plot_20250514_112326.png', '(b) Zoomed scan on candidate 3')):
         ax.imshow(plt.imread(f'{d}/{png}')); ax.axis('off')
         ax.set_title(title, loc='left', color=INK)
     o = json.load(open(f'{d}/optimization_data_20250514_092342.json'))
@@ -117,7 +117,7 @@ def fig_chain():
     c.annotate(f'max {float(o["max_fluor"]):.2f} kcps\nat z = {zm:.3f} V', (zm, float(o['max_fluor'])), xytext=(0.76, 8.6), arrowprops=dict(arrowstyle='-', color=MUTED, lw=0.6),
                textcoords=('data', 'data'), fontsize=7, color=INK)
     c.set_xlabel('objective z (V)'); c.set_ylabel('fluorescence (kcps)')
-    c.set_title('(c) z-focus optimize on candidate 1, 09:23', loc='left', color=INK)
+    c.set_title('(c) Focus optimization (candidate 1)', loc='left', color=INK)
     c.yaxis.grid(True, color=GRID, lw=0.5)
     res, (f, y, er, p0, p1, p2) = esr_fit.fit()
     ff = np.linspace(f.min(), f.max(), 600)
@@ -126,12 +126,12 @@ def fig_chain():
     t = res['two_dip_fit']
     for fc in (t['f1_MHz'], t['f2_MHz']):
         e.axvline(fc / 1e3, color=MUTED, lw=0.7, ls=':')
-    e.text(0.02, 0.04, f"two-Lorentzian fit (fit performed for this report)\n"
+    e.text(0.02, 0.04, f"two-Lorentzian fit\n"
                        f"f$_1$ = {t['f1_MHz']/1e3:.4f}, f$_2$ = {t['f2_MHz']/1e3:.4f} GHz\n"
-                       f"Δf = {t['splitting_MHz']:.1f} ± {t['splitting_err_MHz']:.1f} MHz (if Zeeman: B$_\\parallel$ ≈ {t['B_parallel_G']:.1f} G)",
+                       f"Δf = {t['splitting_MHz']:.1f} ± {t['splitting_err_MHz']:.1f} MHz",
            transform=e.transAxes, fontsize=6.3, bbox=dict(fc='white', ec='none', alpha=0.9, pad=1.5), color=INK, va='bottom')
     e.set_xlabel('microwave frequency (GHz)'); e.set_ylabel('normalized fluorescence')
-    e.set_title('(d) CW-ESR on candidate 3, 0 dBm, 11:48', loc='left', color=INK)
+    e.set_title('(d) ODMR on candidate 3', loc='left', color=INK)
     e.yaxis.grid(True, color=GRID, lw=0.5)
     e.set_ylim(0.905, 1.045)
     save(fig, 'fig2_case_chain_14may')

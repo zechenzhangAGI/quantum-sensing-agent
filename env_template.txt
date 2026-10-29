@@ -12,7 +12,11 @@
 # 4. Create a new API key
 # 5. Copy the key and paste it below
 
-# Anthropic API Key for Claude models (REQUIRED)
+# Which model adapter to use: anthropic (default, Claude) or openai
+# (any OpenAI-compatible endpoint: OpenAI, Gemini, OpenRouter, a local vLLM server, ...)
+# QSA_ENGINE=anthropic
+
+# Anthropic API Key for Claude models (required when QSA_ENGINE=anthropic)
 ANTHROPIC_API_KEY=YOUR_ANTHROPIC_API_KEY_HERE
 
 # Optional: Uncomment and set if you want to override default models
@@ -22,3 +26,9 @@ ANTHROPIC_API_KEY=YOUR_ANTHROPIC_API_KEY_HERE
 # Optional: only needed for the DeepSeek / Together AI engines
 # DEEPSEEK_API_KEY=YOUR_DEEPSEEK_API_KEY_HERE
 # TOGETHER_API_KEY=YOUR_TOGETHER_API_KEY_HERE
+
+# Only for QSA_ENGINE=openai
+# OPENAI_API_KEY=YOUR_API_KEY_HERE
+# OPENAI_BASE_URL=https://api.openai.com/v1   # change for other providers or a local server
+# QSA_TEXT_MODEL=gpt-4o
+# QSA_VISION_MODEL=gpt-4o                     # must accept images

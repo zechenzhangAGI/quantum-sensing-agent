@@ -1,0 +1,64 @@
+% Figure 1: architecture of the Quantum Sensing Agent harness
+\begin{tikzpicture}[
+  font=\sffamily\scriptsize,
+  >={Stealth[length=4pt]},
+  box/.style={draw=#1!65!black, fill=#1!7, rounded corners=3pt, line width=0.6pt, align=center, inner sep=4pt},
+  inner/.style={draw=violet!55!black, fill=white, rounded corners=2pt, align=center, minimum width=3.85cm, inner sep=2.5pt},
+  tool/.style={draw=teal!65!black, fill=teal!6, rounded corners=2pt, line width=0.5pt, align=center,
+               minimum width=2.45cm, minimum height=0.5cm, inner sep=1.5pt},
+  wstep/.style={draw=orange!70!black, fill=orange!8, rounded corners=2pt, line width=0.5pt, align=center,
+               minimum width=1.7cm, minimum height=0.6cm, inner sep=2pt},
+  lab/.style={font=\sffamily\scriptsize\itshape, text=black!60},
+  flow/.style={->, line width=0.7pt, draw=black!65},
+]
+
+% ---------------- scientist
+\node[box=blue, minimum width=2.2cm, minimum height=2.7cm] (sci) at (0,0)
+  {\textbf{Scientist}\\[4pt] goals in natural\\language\\[3pt] guidance and\\domain rules\\[3pt] approvals};
+
+% ---------------- agent core
+\node[box=violet, minimum width=4.25cm, minimum height=2.7cm] (core) at (4.05,0) {};
+\node[font=\sffamily\scriptsize\bfseries, anchor=north] at ([yshift=-1pt]core.north) {Agent core};
+\node[inner] (llm) at (4.05,0.42) {Language model (engine adapter)\\[-1pt] {\tiny Claude in deployment; any OpenAI-compatible model}};
+\node[inner] (guard) at (4.05,-0.82) {Action parser and safeguards\\[-1pt] {\tiny allow-list, folder sandbox, schema rules, approval gate}};
+\draw[flow] (llm.south) -- node[right, lab, xshift=1pt] {one action} (guard.north);
+
+% ---------------- tools
+\node[font=\sffamily\scriptsize\bfseries] at (8.4,1.48) {Tools};
+\node[tool] (tcfg) at (8.4, 0.95) {\textbf{read / write}\ {\tiny JSON configs}};
+\node[tool] (trun) at (8.4, 0.32) {\textbf{run}\ {\tiny allow-listed scripts}};
+\node[tool] (tvis) at (8.4,-0.31) {\textbf{vision}\ {\tiny read a saved plot}};
+\node[tool] (tmem) at (8.4,-0.94) {\textbf{recall}\ {\tiny search past sessions}};
+\draw[line width=0.6pt, draw=black!55] (6.85,0.95) -- (6.85,-0.94);
+\foreach \t in {tcfg,trun,tvis,tmem}{ \draw[line width=0.6pt, draw=black!55] (6.85,0 |- \t.west) -- (\t.west); }
+\draw[flow] (core.east) -- (6.85,0);
+
+% ---------------- lab
+\node[box=gray, minimum width=2.55cm, minimum height=1.0cm] (stack) at (11.85,0.62)
+  {\textbf{Lab control software}\\{\tiny the lab's existing scripts and drivers}};
+\node[box=gray, minimum width=2.55cm, minimum height=1.35cm] (hw) at (11.85,-0.88)
+  {\textbf{Confocal NV setup}\\{\tiny galvo mirrors, z-piezo,}\\{\tiny photon counter, MW generator}\\{\tiny saves PNG plots + JSON data}};
+\draw[flow] (trun.east) -- (10.05,0.32) |- (stack.west);
+\draw[flow] (stack) -- (hw);
+\draw[flow] (hw.west) -- (10.25,-0.88) |- (tvis.east);
+
+% ---------------- memory & log
+\node[box=brown, minimum width=4.25cm, minimum height=0.85cm] (mem) at (4.05,-2.55)
+  {\textbf{Experiential memory}\\{\tiny past sessions, stored with the figures they refer to}};
+\node[box=brown, minimum width=3.9cm, minimum height=0.85cm] (log) at (11.4,-2.55)
+  {\textbf{Provenance log}\\{\tiny every message, reasoning step, action,}\\{\tiny approval and output}};
+\draw[flow, <->] (tmem.south) |- (mem.east);
+\draw[flow, dashed] (guard.south) -- node[right, lab] {saved on exit} (mem.north);
+
+% ---------------- the scientist loop
+\draw[flow, <->] (sci.east) -- node[above, lab] {chat} (core.west);
+
+% ---------------- workflow strip
+\node[lab, anchor=east] at (1.55,-4.05) {measurement loop};
+\node[wstep] (s1) at (2.65,-4.05) {confocal scan\\[-1pt]{\tiny field of view}};
+\node[wstep] (s2) at (5.05,-4.05) {locate emitter\\[-1pt]{\tiny zoomed scan + fit}};
+\node[wstep] (s3) at (7.45,-4.05) {optimize focus\\[-1pt]{\tiny z sweep}};
+\node[wstep] (s4) at (9.85,-4.05) {ODMR sweep\\[-1pt]{\tiny microwave frequency}};
+\draw[flow] (s1) -- (s2); \draw[flow] (s2) -- (s3); \draw[flow] (s3) -- (s4);
+\draw[flow] (s4.east) -- ++(0.4,0) |- ([yshift=-0.5cm]s2.south) node[pos=0.75, below, lab] {next candidate} -- (s2.south);
+\end{tikzpicture}
