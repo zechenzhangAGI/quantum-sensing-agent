@@ -8,8 +8,9 @@ numpy
 # Measurement wrapper scripts and the example figure
 matplotlib
 
-# Optional: alternative engines (agent/deepseek_engine.py, agent/togetherai_deepseek_engine.py)
-# openai
+# Optional: QSA_ENGINE=openai (agent/openai_compatible_engine.py)
+# openai>=1.0
+# Optional, legacy adapters (agent/deepseek_engine.py, agent/togetherai_deepseek_engine.py)
 # together
 
 # Hardware control (NOT on PyPI; the Harvard lab's own stack, not included):

@@ -1,8 +1,8 @@
 # Quantum Sensing Agent
 
-**A Claude-based agent that ran a room-temperature scanning-confocal NV-center experiment in the lab, February–June 2025.**
+**A language-model agent that runs a room-temperature scanning-confocal NV-center experiment through the lab's own control software. Deployed in the Yacoby Lab from February 2025.**
 
-📄 **Technical report:** [Quantum Sensing Agent: An LLM Agent that Operated a Scanning-Confocal NV-Center Experiment in Early 2025](docs/technical-report/qsa_technical_report.pdf) (Zhang, Xue, Fan, Yacoby). To our knowledge, this is among the earliest LLM agents to operate a quantum-sensing experiment: its first hardware session was on 18 February 2025.
+📄 **Technical report:** [Quantum Sensing Agent: A Language-Model Agent for Operating NV-Center Quantum Sensing Experiments](docs/technical-report/qsa_technical_report.pdf) (Zechen Zhang\*, Ruolan Xue\*, Jack Fan, Amir Yacoby; \*co-led). When we started in early 2025, language-model agents had run chemistry and microscopy instruments but, to our knowledge, not yet a quantum-sensing experiment.
 
 The agent wrote measurement configs, launched the instrument scripts, read the resulting plots and proposed next steps, while a researcher at the setup directed it and added physical judgment. It can also search its own past sessions, including their plots, through retrieval over earlier conversations.
 
@@ -25,7 +25,7 @@ This figure shows the raw data; a two-Lorentzian fit is in the technical report.
 - **Configures by writing JSON.** It reads the default config for a script, changes parameter values
   (never keys), and saves a new config in the current run folder.
 - **Reads its own plots.** After each measurement it can send the saved PNG and the recent conversation
-  to Claude's vision input, and plan the next step from what it sees.
+  to a vision-capable model, and plan the next step from what it sees.
 - **Can search past sessions.** Conversations are embedded at exit. The agent can search them (`rag_search`)
   and reopen the plots those sessions referred to. In the logged hardware sessions, retrieval did not measurably
   change the agent's behaviour.
@@ -39,7 +39,7 @@ flowchart LR
     U([Researcher]) <-->|chat, permission| A
     subgraph A[agent/agent.py · NVExperimentAgent]
         P[System prompt<br/>workflow + rules] --> L
-        L[Claude via<br/>anthropic_engine.py] -->|one think + one action per turn| X{Action}
+        L[Language model<br/>Claude or any OpenAI-compatible] -->|one think + one action per turn| X{Action}
     end
     X -->|read / write| C[(JSON configs<br/>runs/run_*/configs)]
     X -->|run| S[scripts/<br/>galvo_scan · find_nv<br/>optimize · ESR]
@@ -54,7 +54,7 @@ flowchart LR
 | Component | File | Role |
 |---|---|---|
 | Agent | [`agent/agent.py`](agent/agent.py) | Prompting, action parsing, permission gate, logging, CLI |
-| LLM engine | [`agent/anthropic_engine.py`](agent/anthropic_engine.py) | Claude text and vision calls, prompt caching |
+| LLM engines | [`agent/anthropic_engine.py`](agent/anthropic_engine.py), [`agent/openai_compatible_engine.py`](agent/openai_compatible_engine.py) | Text and vision calls; select with `QSA_ENGINE` |
 | Retrieval | [`agent/rag_engine.py`](agent/rag_engine.py) | all-MiniLM-L6-v2 embeddings, cosine search, plot-name extraction |
 | Alternative engines | `agent/deepseek_engine.py`, `agent/togetherai_deepseek_engine.py` | Same interface, inactive by default |
 | Instrument scripts | [`projects/NVExperiment/scripts/`](projects/NVExperiment/scripts/) | Thin wrappers: load JSON, run the toolkit script, save PNG + JSON |
@@ -153,8 +153,11 @@ python agent/agent.py         # run from the repository root; choose 1 (assistan
 - Offline test (no API key, no hardware): `pip install pytest`, then `python -m pytest tests/`. The other scripts in `tests/` need an
   API key and are run directly from the root (e.g. `python tests/test_rag.py`).
 - On first use, `sentence-transformers` downloads the `all-MiniLM-L6-v2` model (about 90 MB) from Hugging Face.
-- Models default to Claude 3.5 Sonnet (text) and Claude 3.7 Sonnet (vision). Override them with
-  `DEFAULT_MODEL` / `SONNET_NEW` in `.env`.
+- **Any model.** The agent talks to models only through `call_llm` and `call_vision`. `QSA_ENGINE=anthropic`
+  (default) uses Claude: Claude 3.5 Sonnet (text) and Claude 3.7 Sonnet (vision) as in the 2025 deployment, overridable with
+  `DEFAULT_MODEL` / `SONNET_NEW`. `QSA_ENGINE=openai` uses [`agent/openai_compatible_engine.py`](agent/openai_compatible_engine.py)
+  with any OpenAI-compatible endpoint (`OPENAI_BASE_URL`, `QSA_TEXT_MODEL`, `QSA_VISION_MODEL`; `pip install openai`).
+  The vision model must accept images. We checked the unchanged harness with GPT-6 through this adapter.
 
 ## Repository layout
 
@@ -180,8 +183,8 @@ If you use this code or data, please cite the technical report (arXiv ID to be a
 
 ```bibtex
 @misc{zhang2026quantumsensingagent,
-  title         = {Quantum Sensing Agent: An {LLM} Agent that Operated a Scanning-Confocal
-                   {NV}-Center Experiment in Early 2025},
+  title         = {Quantum Sensing Agent: A Language-Model Agent for Operating
+                   {NV}-Center Quantum Sensing Experiments},
   author        = {Zhang, Zechen and Xue, Ruolan and Fan, Jack and Yacoby, Amir},
   year          = {2026},
   eprint        = {TBD},
@@ -194,7 +197,7 @@ If you use this code or data, please cite the technical report (arXiv ID to be a
 
 By git handle:
 
-- **[@zechenzhangAGI](https://github.com/zechenzhangAGI)** (Zechen Zhang): project lead
+- **[@zechenzhangAGI](https://github.com/zechenzhangAGI)** (Zechen Zhang): co-lead, agent harness
 - **[@itsjackfan](https://github.com/itsjackfan)** (Jack Fan)
 - **[@rholanx](https://github.com/rholanx)**
 - **[@SamC1249](https://github.com/SamC1249)**
@@ -202,8 +205,9 @@ By git handle:
 
 ## Acknowledgments
 
-This work was carried out in the **Yacoby Lab at Harvard University** (Prof. Amir Yacoby). The hardware
-sessions were run at the setup by Zechen Zhang together with Ruolan Xue. The instrument layer is the lab's
+This work was carried out in the **Yacoby Lab at Harvard University** (Prof. Amir Yacoby). Zechen Zhang and
+Ruolan Xue co-led the project: Zechen built the agent harness, and Ruolan led the hardware side (the confocal NV
+setup and the measurement scripts); they ran the experiments together. The instrument layer is the lab's
 `pylabcontrol` / `b26_toolkit` software.
 
 ## License

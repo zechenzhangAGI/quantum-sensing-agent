@@ -4,10 +4,16 @@ import re
 import subprocess
 from datetime import datetime
 
-from anthropic_engine import call_llm, call_vision  # Import both text and vision functions
-# from deepseek_engine import call_llm, call_vision  # Import both text and vision functions
-#from anthropic_engine import call_vision
-#from deepseek_engine import call_llm
+from dotenv import load_dotenv
+
+# The agent talks to language models only through call_llm and call_vision.
+# QSA_ENGINE picks the adapter: "anthropic" (default, Claude) or "openai"
+# (any OpenAI-compatible endpoint; see openai_compatible_engine.py).
+load_dotenv()
+if os.environ.get("QSA_ENGINE", "anthropic").lower() == "openai":
+    from openai_compatible_engine import call_llm, call_vision
+else:
+    from anthropic_engine import call_llm, call_vision
 from rag_engine import embed_text, save_embeddings, load_embeddings, search_similar
 
 class NVExperimentAgent:
